@@ -1,15 +1,19 @@
 #include <tamtypes.h>
 
-#include <libgc/stdio.h>
-#include <libgc/string.h>
-#include <libgc/pad.h>
-#include <libgc/player.h>
+#include <librac1/stdio.h>
+#include <librac1/string.h>
+#include <librac1/pad.h>
+#include <librac1/player.h>
+#include <librac1/math3d.h>
+#include <librac1/math.h>
 
 int main(void)
 {
 	Player *p = (Player*)PLAYER_1_STRUCT;
-	if ((*(u16*)((u32)P1_PAD + 0x1c) & PAD_CROSS) == 0)
-		p->pos[2] += 0.110f;
+	if (!p) return;
+
+	if ((P1_PAD->btns & PAD_CROSS) == 0)
+		*(float*)&p->pos[2] += 1.125;
 
 	return 0;
 }

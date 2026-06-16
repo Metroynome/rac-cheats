@@ -1,5 +1,5 @@
 EE_REGION = ntscj
-EE_LIBS = -lgcntscj
-EE_DEFS = -DGC_NTSCJ -DRAC2_NTSCJ
+EE_LIBS = -lrac1ntscj
+EE_DEFS = -DRAC_NTSCJ -DRAC1_NTSCJ -DNTSCJ
 
 include ${CURDIR}/Makefile.defs

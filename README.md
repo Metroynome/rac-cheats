@@ -1,10 +1,10 @@
-# gc-cheats
+# rac-cheats
 
 Sample project showing how to use libdl to create cheat codes for Ratchet and Clank: Up Your Arsenal
 ## Build with docker
 ### Clone Repos
 ```sh
-git clone https://github.com/Metroynome/gc-cheats.git
+git clone https://github.com/Metroynome/rac-cheats.git
 ```
 ### Get PS2SDK via Docker
 You will need to run this command in the top directory that `horizon-uya-patch` and `uya-cheats` is in.  `uya-cheats` requires access to both directories.

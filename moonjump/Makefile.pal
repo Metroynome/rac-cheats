@@ -1,0 +1,5 @@
+EE_REGION = pal
+EE_LIBS = -lgcpal
+EE_DEFS = -DGC_PAL -DRAC2_PAL
+
+include ${CURDIR}/Makefile.defs

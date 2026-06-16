@@ -1,0 +1,5 @@
+EE_REGION = ntscu
+EE_LIBS = -lgcntscu
+EE_DEFS = -DGC_NTSCU -DRAC2_NTSCU
+
+include ${CURDIR}/Makefile.defs

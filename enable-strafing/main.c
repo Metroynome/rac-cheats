@@ -49,25 +49,21 @@ void strafeLogic(void)
     *playerX = *camY;
     ((void(*)(int, float, float, float))0x00232490)(0, f1 * 0.017f, f1 * 0.3f, momentum * 4.712389f);
     *playerX = saved;
-
-    // call the original handler for this state
-    if (state >= 0 && state < 6 && originalHandlers[state])
-        originalHandlers[state]();
 }
 
 int main(void)
 {
     u32 *jumpTable = (u32*)0x00208e80;
 
-    // only patch once
-    if (jumpTable[0] == (u32)&strafeLogic) return 0;
-
-    int states[] = {0, 1, 2, 3, 4, 5};
-    int i;
-    for (i = 0; i < COUNT_OF(states); ++i) {
-        originalHandlers[states[i]] = (CaseHandler)jumpTable[states[i]];
-        POKE_U32(&jumpTable[states[i]], (u32)&strafeLogic);
+    Hero *hero = (Hero*)PLAYER_1_STRUCT;
+    if (
+        hero->state == 0
+        || hero->state == 1
+        || hero->state == 2
+        || hero->state == 4
+        || hero->state == 5
+    ) {
+        strafeLogic();
     }
-
     return 0;
 }

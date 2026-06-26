@@ -9,45 +9,78 @@
 #include <librac1/player.h>
 #include <librac1/math.h>
 
-#define doBehavior_jal ((u32)0x00231dd0)
-#define doBehavior_func ((u32)0x002370b8)
-
-#define HERO_MOVE_X         0x00e0
-#define HERO_MOVE_Z         0x00e4
-#define HERO_MOVE_Y         0x00e8
-#define HERO_FACE_YAW       0x0180
-#define HERO_MOVE_SPEED     0x0190
-#define HERO_INPUT_MAG      0x229c
+#define HERO_MOVE_X (0x00e0)
+#define HERO_MOVE_Z (0x00e4)
+#define HERO_MOVE_Y  (0x00e8)
+#define HERO_FACE_YAW (0x0180)
+#define HERO_MOVE_SPEED (0x0190)
+#define HERO_INPUT_MAG (0x229c)
 
 #define CAMERA_YAW          (*(float*)0x00167258)
 #define MOMENTUM_MULTIPLIER (*(float*)0x0015ed6c)
 
-typedef float (*AngleSin_t)(float angle);
-typedef float (*AngleCos_t)(float angle);
-
-static AngleSin_t AngleSin = (AngleSin_t)0x002216f8;
-static AngleCos_t AngleCos = (AngleCos_t)0x00221710;
-
-VariableAddress_t vaUpdateAnalog = {
-    .Veldin1 = 0x0020889c,
-    .Novalis = 0x00229f9c,
-    .Aridia = 0x002190f4,
-    .Kerwan = 0x00201a2c,
-    .Eudora = 0x001fbe7c,
-    .Rilgar = 0x00236e04,
-    .NebulaG34 = 0x002206fc,
-    .Unbris = 0x00230704,
-    .Batalia = 0x0021ac14,
-    .Gaspar = 0x0022857c,
-    .Orxon = 0x001fbf04,
-    .Pokitaru = 0x002399f4,
-    .Hoven = 0x0022b084,
-    .OltanisOrbit = 0x00214384,
-    .Oltanis = 0x0021b78c,
-    .Quartu = 0x0020171c,
-    .Kalebo = 0x002068fc,
-    .VeldinOrbit = 0x002057f4,
-    .Veldin2 = 0x00210d94,
+VariableAddress_t vaDoBehavior_Hook = {
+#ifdef RAC1_PAL
+	.Veldin1 = 0x002a9094,
+	.Novalis = 0x0023bfb4,
+	.Aridia = 0x002a8f54,
+	.Kerwan = 0x002994dc,
+	.Eudora = 0x0029b21c,
+	.Rilgar = 0x002d3ad4,
+	.NebulaG34 = 0x002b62a4,
+	.Umbris = 0x002d2124,
+	.Batalia = 0x002b1afc,
+	.Gaspar = 0x002c803c,
+	.Orxon = 0x0029a8cc,
+	.Pokitaru = 0x002cd26c,
+	.Hoven = 0x002c12d4,
+	.OltanisOrbit = 0x002bdab4,
+	.Oltanis = 0x002b792c,
+	.Quartu = 0x0029cd2c,
+	.Kalebo = 0x002a371c,
+	.VeldinOrbit = 0x002a4784,
+	.Veldin2 = 0x00234e84,
+#elif RAC1_NTSCJ
+	.Veldin1 = 0x002ab544,
+	.Novalis = 0x0023dae4,
+	.Aridia = 0x002ab3c4,
+	.Kerwan = 0x0029b91c,
+	.Eudora = 0x0029d6fc,
+	.Rilgar = 0x002d5f3c,
+	.NebulaG34 = 0x002b86d4,
+	.Umbris = 0x002d4584,
+	.Batalia = 0x002b3f44,
+	.Gaspar = 0x002ca4ec,
+	.Orxon = 0x0029cd0c,
+	.Pokitaru = 0x002cf6ac,
+	.Hoven = 0x002c37a4,
+	.OltanisOrbit = 0x002bffcc,
+	.Oltanis = 0x002b9d7c,
+	.Quartu = 0x0029f194,
+	.Kalebo = 0x002a5bf4,
+	.VeldinOrbit = 0x002a6cdc,
+	.Veldin2 = 0x00236a9c,
+#else
+	.Veldin1 = 0x002a96ec,
+	.Novalis = 0x0023c44c,
+	.Aridia = 0x002a9624,
+	.Kerwan = 0x00299bac,
+	.Eudora = 0x0029b8f4,
+	.Rilgar = 0x002d4144,
+	.NebulaG34 = 0x002b697c,
+	.Umbris = 0x002d27fc,
+	.Batalia = 0x002b21cc,
+	.Gaspar = 0x002c8714,
+	.Orxon = 0x0029afa4,
+	.Pokitaru = 0x002cd93c,
+	.Hoven = 0x002c19a4,
+	.OltanisOrbit = 0x002be18c,
+	.Oltanis = 0x002b7f7c,
+	.Quartu = 0x0029d3fc,
+	.Kalebo = 0x002a3e0c,
+	.VeldinOrbit = 0x002a4e5c,
+	.Veldin2 = 0x0023531c,
+#endif
 };
 
 static float clampf_local(float value, float min, float max)
@@ -95,8 +128,8 @@ static void apply_camera_relative_strafe(Player *player, float input_mag)
 
     *(float*)((u32)player + HERO_MOVE_SPEED) = speed;
 
-    *(float*)((u32)player + HERO_MOVE_X) = AngleSin(move_yaw) * speed;
-    *(float*)((u32)player + HERO_MOVE_Z) = AngleCos(move_yaw) * speed;
+    *(float*)((u32)player + HERO_MOVE_X) = asinf(move_yaw) * speed;
+    *(float*)((u32)player + HERO_MOVE_Z) = acosf(move_yaw) * speed;
     *(float*)((u32)player + HERO_MOVE_Y) = 0.0f;
 }
 
@@ -113,8 +146,9 @@ void strafe_hijack(void)
 
 int main(void)
 {
-    if (gameMode == 0) {
-        HOOK_J(0x0023c44c, &strafe_hijack);
+    u32 hook = GetAddress(&vaDoBehavior_Hook);
+    if (gameMode == 0 && *(u32*)hook == 0x03e00008) {
+        HOOK_J(hook, &strafe_hijack);
     }
 
     return 0;

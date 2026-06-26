@@ -103,7 +103,8 @@ void face_camera(Player *player)
 
 void apply_camera_relative_strafe(Player *player, float input_mag)
 {
-	float move_yaw = *(float*)((u32)player + HERO_FACE_YAW);
+	float *camRot = (float*)cameraGetRot();
+	float cam_yaw = camRot[2];
 
     face_camera(player);
 
@@ -118,8 +119,18 @@ void apply_camera_relative_strafe(Player *player, float input_mag)
 
     *(float*)((u32)player + HERO_MOVE_SPEED) = speed;
 
-    *(float*)((u32)player + HERO_MOVE_X) = asinf(move_yaw) * speed;
-    *(float*)((u32)player + HERO_MOVE_Z) = acosf(move_yaw) * speed;
+    float stick_x = player->sitckInput[0];
+    float stick_y = -player->sitckInput[1];
+    float stick_len = sqrtf(stick_x * stick_x + stick_y * stick_y);
+    if (stick_len > 1.0f) {
+        stick_x /= stick_len;
+        stick_y /= stick_len;
+    }
+    float cam_sin = asinf(cam_yaw);
+    float cam_cos = acosf(cam_yaw);
+
+    *(float*)((u32)player + HERO_MOVE_X) = (cam_sin * stick_y + cam_cos * stick_x) * speed;
+    *(float*)((u32)player + HERO_MOVE_Z) = (cam_cos * stick_y - cam_sin * stick_x) * speed;
     *(float*)((u32)player + HERO_MOVE_Y) = 0.0f;
 }
 

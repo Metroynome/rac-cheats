@@ -105,8 +105,6 @@ void strafe_hijack(void)
     Player *player = (Player*)PLAYER_1_STRUCT;
     int old_state = player->state;
 
-    ((void(*)(void))doBehavior_func)();
-
     if (is_strafe_state(player->state) || is_strafe_state(old_state)) {
         float input_mag = *(float*)((u32)player + HERO_INPUT_MAG);
         apply_camera_relative_strafe(player, input_mag);
@@ -115,8 +113,8 @@ void strafe_hijack(void)
 
 int main(void)
 {
-    if (*(u32*)doBehavior_jal != 0 && *(u32*)doBehavior_jal == 0x0c08dc2e) {
-        HOOK_JAL(doBehavior_jal, &strafe_hijack);
+    if (gameMode == 0) {
+        HOOK_J(0x0023c44c, &strafe_hijack);
     }
 
     return 0;

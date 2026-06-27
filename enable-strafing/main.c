@@ -139,6 +139,9 @@ void strafe_hijack(void)
     Player *player = (Player*)PLAYER_1_STRUCT;
     int old_state = player->state;
 
+	if (player->weaponHeldId == 8)
+		return;
+
     if (is_strafe_state(player->state) || is_strafe_state(old_state)) {
         float input_mag = *(float*)((u32)player + HERO_INPUT_MAG);
         apply_camera_relative_strafe(player, input_mag);

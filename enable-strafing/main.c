@@ -27,18 +27,6 @@
 #endif
 
 int strafe_camera_active = 0;
-u32 real_pad_bits = 0;
-int forced_pad_active = 0;
-
-void force_r2_for_native_strafe(void)
-{
-    if (!forced_pad_active) {
-        real_pad_bits = P1_PAD->bits;
-        forced_pad_active = 1;
-    }
-
-    P1_PAD->bits = real_pad_bits | PAD_R2;
-}
 
 void apply_native_strafe_camera_mode(u32 camera)
 {
@@ -58,30 +46,11 @@ void apply_native_strafe_camera_mode(u32 camera)
     *(s16*)(camera_state + 0x16) = 0;
 }
 
-float fast_sinf(float angle)
-{
-    return asinf(angle);
-}
-
-float fast_cosf(float angle)
-{
-    return acosf(angle);
-}
-
 void camera_strafe_update_wrapper(u32 camera)
 {
-    Player *player = (Player*)PLAYER_1_STRUCT;
-    int old_state = player->state;
-
-    if (strafe_camera_active) {
-        player->state = PLAYER_STATE_ELECTRIC_DEATH_UNDER;
-        force_r2_for_native_strafe();
-    }
-
     ((void (*)(u32))CAMERA_STRAFE_UPDATE_FUNC)(camera);
     if (strafe_camera_active)
         apply_native_strafe_camera_mode(camera);
-    player->state = old_state;
 }
 
 VariableAddress_t vaDoBehavior_Hook = {
@@ -244,7 +213,6 @@ void apply_camera_relative_strafe(Player *player, float input_mag)
     }
 
     strafe_camera_active = 1;
-    force_r2_for_native_strafe();
 
     float speed = *(float*)((u32)player + HERO_MOVE_SPEED);
     if (speed < MOMENTUM_MULTIPLIER * 1.5f)
@@ -261,8 +229,8 @@ void apply_camera_relative_strafe(Player *player, float input_mag)
         stick_x /= stick_len;
         stick_y /= stick_len;
     }
-    float cam_sin = fast_sinf(cam_yaw);
-    float cam_cos = fast_cosf(cam_yaw);
+    float cam_sin = asinf(cam_yaw);
+    float cam_cos = acosf(cam_yaw);
 
     *(float*)((u32)player + HERO_MOVE_X) = (cam_sin * stick_y + cam_cos * stick_x) * speed;
     *(float*)((u32)player + HERO_MOVE_Z) = (cam_cos * stick_y - cam_sin * stick_x) * speed;
@@ -275,10 +243,6 @@ void strafe_hijack(void)
     Player *player = (Player*)PLAYER_1_STRUCT;
     int old_state = player->state;
 
-    if (forced_pad_active) {
-        P1_PAD->bits = real_pad_bits;
-        forced_pad_active = 0;
-    }
     strafe_camera_active = 0;
 
 	if (player->weaponHeldId == 8)

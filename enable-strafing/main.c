@@ -18,6 +18,72 @@
 #define HERO_INPUT_MAG (0x229c)
 #define MOMENTUM_MULTIPLIER (0.0166667f) // novalis: (*(float*)0x0015ed6c)
 
+#if !defined(RAC1_PAL) && !defined(RAC1_NTSCJ)
+#define CAMERA_STRAFE_UPDATE_CALL (0x00314e3c)
+#define CAMERA_STRAFE_UPDATE_FUNC (0x003111d8)
+#else
+#define CAMERA_STRAFE_UPDATE_CALL (0)
+#define CAMERA_STRAFE_UPDATE_FUNC (0)
+#endif
+
+int strafe_camera_active = 0;
+u32 real_pad_bits = 0;
+int forced_pad_active = 0;
+
+void force_r2_for_native_strafe(void)
+{
+    if (!forced_pad_active) {
+        real_pad_bits = P1_PAD->bits;
+        forced_pad_active = 1;
+    }
+
+    P1_PAD->bits = real_pad_bits | PAD_R2;
+}
+
+void apply_native_strafe_camera_mode(u32 camera)
+{
+    if (*(s16*)(camera + 0x86) != 0)
+        return;
+
+    u32 camera_state = *(u32*)(camera + 0x70);
+    if (camera_state == 0)
+        return;
+
+    *(s16*)(camera_state + 0x10) = 0;
+    *(u8*)(camera_state + 0x116) = 1;
+    *(float*)(camera_state + 0x11c) = 0.04f;
+    *(float*)(camera_state + 0x120) = 0.2f;
+    *(s16*)(camera_state + 0x12) = 0;
+    *(s16*)(camera_state + 0x14) = 0;
+    *(s16*)(camera_state + 0x16) = 0;
+}
+
+float fast_sinf(float angle)
+{
+    return asinf(angle);
+}
+
+float fast_cosf(float angle)
+{
+    return acosf(angle);
+}
+
+void camera_strafe_update_wrapper(u32 camera)
+{
+    Player *player = (Player*)PLAYER_1_STRUCT;
+    int old_state = player->state;
+
+    if (strafe_camera_active) {
+        player->state = PLAYER_STATE_ELECTRIC_DEATH_UNDER;
+        force_r2_for_native_strafe();
+    }
+
+    ((void (*)(u32))CAMERA_STRAFE_UPDATE_FUNC)(camera);
+    if (strafe_camera_active)
+        apply_native_strafe_camera_mode(camera);
+    player->state = old_state;
+}
+
 VariableAddress_t vaDoBehavior_Hook = {
 #ifdef RAC1_PAL
     .Veldin1 = 0x00220ee4,
@@ -172,8 +238,13 @@ void apply_camera_relative_strafe(Player *player, float input_mag)
 
     face_camera(player);
 
-    if (P1_PAD->handsOffStick != 0 || input_mag < 0.2f)
+    if (P1_PAD->handsOffStick != 0 || input_mag < 0.2f) {
+        strafe_camera_active = 0;
         return;
+    }
+
+    strafe_camera_active = 1;
+    force_r2_for_native_strafe();
 
     float speed = *(float*)((u32)player + HERO_MOVE_SPEED);
     if (speed < MOMENTUM_MULTIPLIER * 1.5f)
@@ -190,8 +261,8 @@ void apply_camera_relative_strafe(Player *player, float input_mag)
         stick_x /= stick_len;
         stick_y /= stick_len;
     }
-    float cam_sin = asinf(cam_yaw);
-    float cam_cos = acosf(cam_yaw);
+    float cam_sin = fast_sinf(cam_yaw);
+    float cam_cos = fast_cosf(cam_yaw);
 
     *(float*)((u32)player + HERO_MOVE_X) = (cam_sin * stick_y + cam_cos * stick_x) * speed;
     *(float*)((u32)player + HERO_MOVE_Z) = (cam_cos * stick_y - cam_sin * stick_x) * speed;
@@ -203,6 +274,12 @@ void strafe_hijack(void)
 {
     Player *player = (Player*)PLAYER_1_STRUCT;
     int old_state = player->state;
+
+    if (forced_pad_active) {
+        P1_PAD->bits = real_pad_bits;
+        forced_pad_active = 0;
+    }
+    strafe_camera_active = 0;
 
 	if (player->weaponHeldId == 8)
 		return;
@@ -219,6 +296,9 @@ void strafe_init(void)
     // if InitBodyState function tries to set to HERO_STATE_SKID,
     // skip all states doings.
     POKE_U32(GetAddress(&vaInitBodyState_Skid), 0x100008e2);
+
+    if (CAMERA_STRAFE_UPDATE_CALL != 0 && CAMERA_STRAFE_UPDATE_FUNC != 0)
+        HOOK_JAL(CAMERA_STRAFE_UPDATE_CALL, &camera_strafe_update_wrapper);
 }
 
 int main(void)

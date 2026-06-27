@@ -82,6 +82,70 @@ VariableAddress_t vaDoBehavior_Hook = {
 #endif
 };
 
+VariableAddress_t vaInitBodyState_Skid = {
+#ifdef RAC1_PAL
+    .Veldin1 = 0x002232fc,
+    .Novalis = 0x0023dc34,
+    .Aridia = 0x0022bbe8,
+    .Kerwan = 0x002172e4,
+    .Eudora = 0x0021685c,
+    .Rilgar = 0x0024e1bc,
+    .NebulaG34 = 0x00235ae0,
+    .Umbris = 0x0024b0e4,
+    .Batalia = 0x00231860,
+    .Gaspar = 0x00242f5c,
+    .Orxon = 0x002168e4,
+    .Pokitaru = 0x0024e81c,
+    .Hoven = 0x00240ee8,
+    .OltanisOrbit = 0x0022ed64,
+    .Oltanis = 0x00230558,
+    .Quartu = 0x002177d4,
+    .Kalebo = 0x0021f63c,
+    .VeldinOrbit = 0x0021f3b4,
+    .Veldin2 = 0x00228a88,
+#elif RAC1_NTSCJ
+    .Veldin1 = 0x00224e50,
+    .Novalis = 0x0023f778,
+    .Aridia = 0x0022d754,
+    .Kerwan = 0x00218e28,
+    .Eudora = 0x00218430,
+    .Rilgar = 0x0024fd18,
+    .NebulaG34 = 0x00237614,
+    .Umbris = 0x0024cc38,
+    .Batalia = 0x002333a4,
+    .Gaspar = 0x00244ab0,
+    .Orxon = 0x00218438,
+    .Pokitaru = 0x00250360,
+    .Hoven = 0x00242aac,
+    .OltanisOrbit = 0x002308b8,
+    .Oltanis = 0x0023209c,
+    .Quartu = 0x00219338,
+    .Kalebo = 0x00221200,
+    .VeldinOrbit = 0x00221008,
+    .Veldin2 = 0x0022a5ec,
+#else
+    .Veldin1 = 0x0022371c,
+    .Novalis = 0x0023e0cc,
+    .Aridia = 0x0022c080,
+    .Kerwan = 0x0021777c,
+    .Eudora = 0x00216cfc,
+    .Rilgar = 0x0024e5d4,
+    .NebulaG34 = 0x00235f80,
+    .Umbris = 0x0024b584,
+    .Batalia = 0x00231cf8,
+    .Gaspar = 0x002433fc,
+    .Orxon = 0x00216d84,
+    .Pokitaru = 0x0024ecb4,
+    .Hoven = 0x00241380,
+    .OltanisOrbit = 0x0022f204,
+    .Oltanis = 0x00230970,
+    .Quartu = 0x00217c6c,
+    .Kalebo = 0x0021fad4,
+    .VeldinOrbit = 0x0021f854,
+    .Veldin2 = 0x00228f20,
+#endif
+};
+
 int is_strafe_state(int state)
 {
     return state == PLAYER_STATE_IDLE
@@ -148,10 +212,19 @@ void strafe_hijack(void)
     }
 }
 
+void strafe_init(void)
+{
+    // disable Skidding
+    // if InitBodyState function tries to set to HERO_STATE_SKID,
+    // skip all states doings.
+    POKE_U32(GetAddress(&vaInitBodyState_Skid), 0x100008e2);
+}
+
 int main(void)
 {
     u32 hook = GetAddress(&vaDoBehavior_Hook);
     if (gameMode == 0 && *(u32*)hook == 0x03e00008) {
+        strafe_init();
         HOOK_J(hook, &strafe_hijack);
     }
 

@@ -18,40 +18,7 @@
 #define HERO_INPUT_MAG (0x229c)
 #define MOMENTUM_MULTIPLIER (0.0166667f) // novalis: (*(float*)0x0015ed6c)
 
-#if !defined(RAC1_PAL) && !defined(RAC1_NTSCJ)
-#define CAMERA_STRAFE_UPDATE_CALL (0x00314e3c)
-#define CAMERA_STRAFE_UPDATE_FUNC (0x003111d8)
-#else
-#define CAMERA_STRAFE_UPDATE_CALL (0)
-#define CAMERA_STRAFE_UPDATE_FUNC (0)
-#endif
-
 int strafe_camera_active = 0;
-
-void apply_native_strafe_camera_mode(u32 camera)
-{
-    if (*(s16*)(camera + 0x86) != 0)
-        return;
-
-    u32 camera_state = *(u32*)(camera + 0x70);
-    if (camera_state == 0)
-        return;
-
-    *(s16*)(camera_state + 0x10) = 0;
-    *(u8*)(camera_state + 0x116) = 1;
-    *(float*)(camera_state + 0x11c) = 0.04f;
-    *(float*)(camera_state + 0x120) = 0.2f;
-    *(s16*)(camera_state + 0x12) = 0;
-    *(s16*)(camera_state + 0x14) = 0;
-    *(s16*)(camera_state + 0x16) = 0;
-}
-
-void camera_strafe_update_wrapper(u32 camera)
-{
-    ((void (*)(u32))CAMERA_STRAFE_UPDATE_FUNC)(camera);
-    if (strafe_camera_active)
-        apply_native_strafe_camera_mode(camera);
-}
 
 VariableAddress_t vaDoBehavior_Hook = {
 #ifdef RAC1_PAL
@@ -181,7 +148,155 @@ VariableAddress_t vaInitBodyState_Skid = {
 #endif
 };
 
-int is_strafe_state(int state)
+VariableAddress_t vaCameraStrafeUpdate_Hook = {
+#ifdef RAC1_PAL
+    .Veldin1 = 0x002e960c,
+    .Novalis = 0x0031476c,
+    .Aridia = 0x002f7514,
+    .Kerwan = 0x002e7efc,
+    .Eudora = 0x002eced4,
+    .Rilgar = 0x00324ca4,
+    .NebulaG34 = 0x0031162c,
+    .Umbris = 0x00324f3c,
+    .Batalia = 0x00311164,
+    .Gaspar = 0x003110bc,
+    .Orxon = 0x002f19c4,
+    .Pokitaru = 0x00324944,
+    .Hoven = 0x00311794,
+    .OltanisOrbit = 0x003139f4,
+    .Oltanis = 0x00310114,
+    .Quartu = 0x002f3834,
+    .Kalebo = 0x002ef6fc,
+    .VeldinOrbit = 0x002fbb94,
+    .Veldin2 = 0x003021cc,
+#elif RAC1_NTSCJ
+    .Veldin1 = 0x002ebcd4,
+    .Novalis = 0x00316dcc,
+    .Aridia = 0x002f9bd4,
+    .Kerwan = 0x002ea554,
+    .Eudora = 0x002ef5cc,
+    .Rilgar = 0x003273ac,
+    .NebulaG34 = 0x00313c54,
+    .Umbris = 0x003275a4,
+    .Batalia = 0x003138ac,
+    .Gaspar = 0x00313814,
+    .Orxon = 0x002f401c,
+    .Pokitaru = 0x0032703c,
+    .Hoven = 0x00313e7c,
+    .OltanisOrbit = 0x003161e4,
+    .Oltanis = 0x003127a4,
+    .Quartu = 0x002f5f14,
+    .Kalebo = 0x002f1e9c,
+    .VeldinOrbit = 0x002fe96c,
+    .Veldin2 = 0x0030491c,
+#else
+    .Veldin1 = 0x002e9c64,
+    .Novalis = 0x00314e3c,
+    .Aridia = 0x002f7be4,
+    .Kerwan = 0x002e85cc,
+    .Eudora = 0x002ed5ac,
+    .Rilgar = 0x003252e4,
+    .NebulaG34 = 0x00311d04,
+    .Umbris = 0x00325614,
+    .Batalia = 0x00311834,
+    .Gaspar = 0x00311794,
+    .Orxon = 0x002f209c,
+    .Pokitaru = 0x00325014,
+    .Hoven = 0x00311e64,
+    .OltanisOrbit = 0x003140cc,
+    .Oltanis = 0x00310764,
+    .Quartu = 0x002f3f04,
+    .Kalebo = 0x002efdec,
+    .VeldinOrbit = 0x002fc26c,
+    .Veldin2 = 0x0030289c,
+#endif
+};
+
+VariableAddress_t vaCameraStrafeUpdate_Func = {
+#ifdef RAC1_PAL
+    .Veldin1 = 0x002e59a8,
+    .Novalis = 0x00310b08,
+    .Aridia = 0x002f3830,
+    .Kerwan = 0x002e4218,
+    .Eudora = 0x002e9270,
+    .Rilgar = 0x00321040,
+    .NebulaG34 = 0x0030d948,
+    .Umbris = 0x003212a8,
+    .Batalia = 0x0030d4d0,
+    .Gaspar = 0x0030d458,
+    .Orxon = 0x002edd60,
+    .Pokitaru = 0x00320ce0,
+    .Hoven = 0x0030dab0,
+    .OltanisOrbit = 0x0030fe28,
+    .Oltanis = 0x0030c4b0,
+    .Quartu = 0x002efb70,
+    .Kalebo = 0x002ebb30,
+    .VeldinOrbit = 0x002f7f30,
+    .Veldin2 = 0x002fe538,
+#elif RAC1_NTSCJ
+    .Veldin1 = 0x002e8068,
+    .Novalis = 0x00313160,
+    .Aridia = 0x002f5ee8,
+    .Kerwan = 0x002e6868,
+    .Eudora = 0x002eb960,
+    .Rilgar = 0x00323740,
+    .NebulaG34 = 0x0030ff68,
+    .Umbris = 0x00323908,
+    .Batalia = 0x0030fc10,
+    .Gaspar = 0x0030fba8,
+    .Orxon = 0x002f03b0,
+    .Pokitaru = 0x003233d0,
+    .Hoven = 0x00310190,
+    .OltanisOrbit = 0x00312610,
+    .Oltanis = 0x0030eb38,
+    .Quartu = 0x002f2248,
+    .Kalebo = 0x002ee2c8,
+    .VeldinOrbit = 0x002fad00,
+    .Veldin2 = 0x00300c80,
+#else
+    .Veldin1 = 0x002e6000,
+    .Novalis = 0x003111d8,
+    .Aridia = 0x002f3f00,
+    .Kerwan = 0x002e48e8,
+    .Eudora = 0x002e9948,
+    .Rilgar = 0x00321680,
+    .NebulaG34 = 0x0030e020,
+    .Umbris = 0x00321980,
+    .Batalia = 0x0030dba0,
+    .Gaspar = 0x0030db30,
+    .Orxon = 0x002ee438,
+    .Pokitaru = 0x003213b0,
+    .Hoven = 0x0030e180,
+    .OltanisOrbit = 0x00310500,
+    .Oltanis = 0x0030cb00,
+    .Quartu = 0x002f0240,
+    .Kalebo = 0x002ec220,
+    .VeldinOrbit = 0x002f8608,
+    .Veldin2 = 0x002fec08,
+#endif
+};
+
+void cameraStrafe_Logic(u32 camera)
+{
+    u32 camera_state;
+
+    // call base
+    ((void (*)(u32))GetAddress(&vaCameraStrafeUpdate_Func))(camera);
+    if (!strafe_camera_active || *(s16*)(camera + 0x86) != 0)
+        return;
+
+    // force camera states to strafe.
+    camera_state = *(u32*)(camera + 0x70);
+    *(s16*)(camera_state + 0x10) = 0;
+    *(u8*)(camera_state + 0x116) = 1;
+    *(float*)(camera_state + 0x11c) = 0.5;
+    *(float*)(camera_state + 0x120) = 0.2;
+    *(s16*)(camera_state + 0x12) = 0;
+    *(s16*)(camera_state + 0x14) = 0;
+    *(s16*)(camera_state + 0x16) = 0;
+}
+
+int strafeStateCheck(int state)
 {
     return state == PLAYER_STATE_IDLE
         || state == PLAYER_STATE_LOOK
@@ -193,19 +308,19 @@ int is_strafe_state(int state)
         || state == PLAYER_STATE_GUN_WAITING;
 }
 
-void face_camera(Player *player)
+void faceForward(Player *player)
 {
 	float *camRot = (float*)cameraGetRot();
     *(float*)((u32)player + HERO_FACE_YAW) = camRot[2];
     player->rot[2] = camRot[2];
 }
 
-void apply_camera_relative_strafe(Player *player, float input_mag)
+void strafeApply(Player *player, float input_mag)
 {
 	float *camRot = (float*)cameraGetRot();
 	float cam_yaw = camRot[2];
 
-    face_camera(player);
+    faceForward(player);
 
     if (P1_PAD->handsOffStick != 0 || input_mag < 0.2f) {
         strafe_camera_active = 0;
@@ -238,7 +353,7 @@ void apply_camera_relative_strafe(Player *player, float input_mag)
     // *(float*)((u32)player + HERO_MOVE_Y) = 0.0f;
 }
 
-void strafe_hijack(void)
+void strafe(void)
 {
     Player *player = (Player*)PLAYER_1_STRUCT;
     int old_state = player->state;
@@ -248,9 +363,9 @@ void strafe_hijack(void)
 	if (player->weaponHeldId == 8)
 		return;
 
-    if (is_strafe_state(player->state) || is_strafe_state(old_state)) {
+    if (strafeStateCheck(player->state) || strafeStateCheck(old_state)) {
         float input_mag = *(float*)((u32)player + HERO_INPUT_MAG);
-        apply_camera_relative_strafe(player, input_mag);
+        strafeApply(player, input_mag);
     }
 }
 
@@ -261,8 +376,7 @@ void strafe_init(void)
     // skip all states doings.
     POKE_U32(GetAddress(&vaInitBodyState_Skid), 0x100008e2);
 
-    if (CAMERA_STRAFE_UPDATE_CALL != 0 && CAMERA_STRAFE_UPDATE_FUNC != 0)
-        HOOK_JAL(CAMERA_STRAFE_UPDATE_CALL, &camera_strafe_update_wrapper);
+    HOOK_JAL(GetAddress(&vaCameraStrafeUpdate_Hook), &cameraStrafe_Logic);
 }
 
 int main(void)
@@ -270,7 +384,7 @@ int main(void)
     u32 hook = GetAddress(&vaDoBehavior_Hook);
     if (gameMode == 0 && *(u32*)hook == 0x03e00008) {
         strafe_init();
-        HOOK_J(hook, &strafe_hijack);
+        HOOK_J(hook, &strafe);
     }
 
     return 0;

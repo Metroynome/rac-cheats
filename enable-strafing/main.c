@@ -195,7 +195,8 @@ void apply_camera_relative_strafe(Player *player, float input_mag)
 
     *(float*)((u32)player + HERO_MOVE_X) = (cam_sin * stick_y + cam_cos * stick_x) * speed;
     *(float*)((u32)player + HERO_MOVE_Z) = (cam_cos * stick_y - cam_sin * stick_x) * speed;
-    *(float*)((u32)player + HERO_MOVE_Y) = 0.0f;
+    // saving Y axis causes floating bug.
+    // *(float*)((u32)player + HERO_MOVE_Y) = 0.0f;
 }
 
 void strafe_hijack(void)

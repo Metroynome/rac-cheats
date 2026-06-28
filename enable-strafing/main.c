@@ -10,14 +10,6 @@
 #include <librac1/math.h>
 #include <librac1/camera.h>
 
-#define HERO_MOVE_X (0x00e0)
-#define HERO_MOVE_Z (0x00e4)
-#define HERO_MOVE_Y (0x00e8)
-#define HERO_FACE_YAW (0x0180)
-#define HERO_MOVE_SPEED (0x0190)
-#define HERO_INPUT_MAG (0x229c)
-#define MOMENTUM_MULTIPLIER (0.0166667f) // novalis: (*(float*)0x0015ed6c)
-
 int strafe_camera_active = 0;
 
 VariableAddress_t vaDoBehavior_Hook = {
@@ -289,7 +281,7 @@ void cameraStrafe_Logic(u32 camera)
     camera_state = *(u32*)(camera + 0x70);
     *(s16*)(camera_state + 0x10) = 0;
     *(u8*)(camera_state + 0x116) = 1;
-    *(float*)(camera_state + 0x11c) = 0.5;
+    *(float*)(camera_state + 0x11c) = 1.0;
     *(float*)(camera_state + 0x120) = 0.2;
     *(s16*)(camera_state + 0x12) = 0;
     *(s16*)(camera_state + 0x14) = 0;
@@ -311,7 +303,7 @@ int strafeStateCheck(int state)
 void faceForward(Player *player)
 {
 	float *camRot = (float*)cameraGetCamera()->rot;
-    *(float*)((u32)player + HERO_FACE_YAW) = camRot[2];
+    player->turn.ideal = camRot[2];
     player->rot[2] = camRot[2];
 }
 
@@ -326,15 +318,15 @@ void strafeApply(Player *player, float input_mag)
         strafe_camera_active = 0;
         return;
     }
-
     strafe_camera_active = 1;
-    float speed = *(float*)((u32)player + HERO_MOVE_SPEED);
-    if (speed < MOMENTUM_MULTIPLIER * 1.5f)
-        speed = MOMENTUM_MULTIPLIER * 3.0f;
+    
+    float momentumMultiplier = 0.0166667f; // novalis: (*(float*)0x0015ed6c)
+    float speed = player->motion.targetSpeed;
+    if (speed < momentumMultiplier * 1.5f)
+        speed = momentumMultiplier * 3.0f;
 
     speed *= clamp(input_mag, 0.35f, 1.0f);
-
-    *(float*)((u32)player + HERO_MOVE_SPEED) = speed;
+    player->motion.targetSpeed = speed;
 
     float stick_x = player->sitckInput[0];
     float stick_y = -player->sitckInput[1];
@@ -343,13 +335,12 @@ void strafeApply(Player *player, float input_mag)
         stick_x /= stick_len;
         stick_y /= stick_len;
     }
+
+
     float cam_sin = asinf(cam_yaw);
     float cam_cos = acosf(cam_yaw);
-
-    *(float*)((u32)player + HERO_MOVE_X) = (cam_sin * stick_y + cam_cos * stick_x) * speed;
-    *(float*)((u32)player + HERO_MOVE_Z) = (cam_cos * stick_y - cam_sin * stick_x) * speed;
-    // saving Y axis causes floating bug.
-    // *(float*)((u32)player + HERO_MOVE_Y) = 0.0f;
+    player->move.behavior[0] = (cam_sin * stick_y + cam_cos * stick_x) * speed;
+    player->move.behavior[1] = (cam_cos * stick_y - cam_sin * stick_x) * speed;
 }
 
 void strafe(void)
@@ -363,7 +354,7 @@ void strafe(void)
 		return;
 
     if (strafeStateCheck(player->state) || strafeStateCheck(old_state)) {
-        float input_mag = *(float*)((u32)player + HERO_INPUT_MAG);
+        float input_mag = player->inputMagnitude;
         strafeApply(player, input_mag);
     }
 }

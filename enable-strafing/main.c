@@ -310,14 +310,14 @@ int strafeStateCheck(int state)
 
 void faceForward(Player *player)
 {
-	float *camRot = (float*)cameraGetRot();
+	float *camRot = (float*)cameraGetCamera()->rot;
     *(float*)((u32)player + HERO_FACE_YAW) = camRot[2];
     player->rot[2] = camRot[2];
 }
 
 void strafeApply(Player *player, float input_mag)
 {
-	float *camRot = (float*)cameraGetRot();
+	float *camRot = (float*)cameraGetCamera()->rot;
 	float cam_yaw = camRot[2];
 
     faceForward(player);
@@ -328,7 +328,6 @@ void strafeApply(Player *player, float input_mag)
     }
 
     strafe_camera_active = 1;
-
     float speed = *(float*)((u32)player + HERO_MOVE_SPEED);
     if (speed < MOMENTUM_MULTIPLIER * 1.5f)
         speed = MOMENTUM_MULTIPLIER * 3.0f;

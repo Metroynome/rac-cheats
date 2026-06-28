@@ -372,11 +372,12 @@ void strafe(void)
 void strafe_init(void)
 {
     // update camera speeds (slow, medium, fast)
-    register int gp asm("gp");
-    float *camSpeed = (float*)((u32)gp - 0x49d8);
-    camSpeed[0] *= 1;
-    camSpeed[1] *= 3;
-    camSpeed[2] *= 5;
+    float *camSpeed = (float*)CAMERA_SPEEDS;
+    if (camSpeed[0] != camSpeed[1]) {
+        camSpeed[0] = camSpeed[1]; // slow: medium
+        camSpeed[1] *= 3; // medium: mediun * 3
+        camSpeed[2] *= 5; // fast: fast * 4
+    }
 
     // disable Skidding
     // if InitBodyState function tries to set to HERO_STATE_SKID,

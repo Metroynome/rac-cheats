@@ -1,5 +1,6 @@
 EE_REGION = pal
 EE_LIBS = -lrac1pal
 EE_DEFS = -DRAC_PAL -DRAC1_PAL -DPAL
+PNACH_NAME = SCES-50916_6A8F18B9
 
 include ${CURDIR}/Makefile.defs

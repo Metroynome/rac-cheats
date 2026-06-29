@@ -9,6 +9,7 @@
 #include <librac1/player.h>
 #include <librac1/math.h>
 #include <librac1/camera.h>
+#include <librac1/gadget.h>
 
 int strafe_camera_active = 0;
 
@@ -274,11 +275,17 @@ void cameraStrafe_Logic(u32 camera)
 
     // call base
     ((void (*)(u32))GetAddress(&vaCameraStrafeUpdate_Func))(camera);
-    if (!strafe_camera_active || *(s16*)(camera + 0x86) != 0)
+    if (!strafe_camera_active || camera == 0 || *(s16*)(camera + 0x86) != 0)
+        return;
+
+    if (!playerCanControl())
         return;
 
     // force camera states to strafe.
     camera_state = *(u32*)(camera + 0x70);
+    if (camera_state == 0)
+        return;
+
     *(s16*)(camera_state + 0x10) = 0;
     *(u8*)(camera_state + 0x116) = 1;
     *(float*)(camera_state + 0x11c) = 1.0;
@@ -288,7 +295,7 @@ void cameraStrafe_Logic(u32 camera)
     *(s16*)(camera_state + 0x16) = 0;
 }
 
-int strafeStateCheck(int state)
+bool strafeStateCheck(int state)
 {
     return state == PLAYER_STATE_IDLE
         || state == PLAYER_STATE_LOOK
@@ -298,6 +305,14 @@ int strafeStateCheck(int state)
         || state == PLAYER_STATE_QUICK_TURN
         || state == PLAYER_STATE_TARGETING
         || state == PLAYER_STATE_GUN_WAITING;
+}
+
+bool strafeGadgetCheck(int gadget)
+{
+    return gadget == GADGET_ID_WRENCH
+        || gadget == GADGET_ID_SWINGSHOT
+        || gadget == GADGET_ID_WALLOPER
+        || gadget == GADGET_ID_PDA;
 }
 
 void faceForward(Player *player)
@@ -345,12 +360,15 @@ void strafeApply(Player *player, float input_mag)
 
 void strafe(void)
 {
-    Player *player = (Player*)PLAYER_1_STRUCT;
-    int old_state = player->state;
+    Player *player = (Player*)PLAYER_STRUCT;
+    int old_state;
 
     strafe_camera_active = 0;
+    if (!playerCanControl())
+        return;
 
-	if (player->weaponHeldId == 8 || player->invisible)
+    old_state = player->state;
+	if (strafeGadgetCheck(player->weaponHeldId) || player->invisible)
 		return;
 
     if (strafeStateCheck(player->state) || strafeStateCheck(old_state)) {
@@ -380,7 +398,7 @@ void strafe_init(void)
 int main(void)
 {
     u32 hook = GetAddress(&vaDoBehavior_Hook);
-    if (gameMode == 0 && *(u32*)hook == 0x03e00008) {
+    if (playerCanControl() && *(u32*)hook == 0x03e00008) {
         strafe_init();
         HOOK_J(hook, &strafe);
     }

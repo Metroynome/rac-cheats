@@ -9,7 +9,7 @@
 
 int main(void)
 {
-	Player *p = (Player*)PLAYER_1_STRUCT;
+	Player *p = (Player*)PLAYER_STRUCT;
 	if (!p) return;
 
 	if ((P1_PAD->btns & PAD_CROSS) == 0)

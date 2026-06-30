@@ -10,31 +10,12 @@
 #include <librac1/math.h>
 #include <librac1/camera.h>
 #include <librac1/gadget.h>
+#include <librac1/graphics.h>
 
 int strafe_camera_active = 0;
 
 VariableAddress_t vaDoBehavior_Hook = {
-#ifdef RAC1_PAL
-    .Veldin1 = 0x00220ee4,
-    .Novalis = 0x0023bfb4,
-    .Aridia = 0x0022a230,
-    .Kerwan = 0x00215150,
-    .Eudora = 0x00214444,
-    .Rilgar = 0x0024b99c,
-    .NebulaG34 = 0x0023416c,
-    .Umbris = 0x00248ccc,
-    .Batalia = 0x0022f63c,
-    .Gaspar = 0x00240b44,
-    .Orxon = 0x002144cc,
-    .Pokitaru = 0x0024c658,
-    .Hoven = 0x0023ebd8,
-    .OltanisOrbit = 0x0022c94c,
-    .Oltanis = 0x0022eadc,
-    .Quartu = 0x002156fc,
-    .Kalebo = 0x0021cdcc,
-    .VeldinOrbit = 0x0021d000,
-    .Veldin2 = 0x00226898,
-#elif RAC1_NTSCJ
+#ifdef RAC1_NTSCJ
     .Veldin1 = 0x00222a34,
     .Novalis = 0x0023dae4,
     .Aridia = 0x0022bd88,
@@ -54,7 +35,27 @@ VariableAddress_t vaDoBehavior_Hook = {
     .Kalebo = 0x0021e97c,
     .VeldinOrbit = 0x0021ec50,
     .Veldin2 = 0x002283e8,
-#else
+#elif RAC1_PAL
+    .Veldin1 = 0x00220ee4,
+    .Novalis = 0x0023bfb4,
+    .Aridia = 0x0022a230,
+    .Kerwan = 0x00215150,
+    .Eudora = 0x00214444,
+    .Rilgar = 0x0024b99c,
+    .NebulaG34 = 0x0023416c,
+    .Umbris = 0x00248ccc,
+    .Batalia = 0x0022f63c,
+    .Gaspar = 0x00240b44,
+    .Orxon = 0x002144cc,
+    .Pokitaru = 0x0024c658,
+    .Hoven = 0x0023ebd8,
+    .OltanisOrbit = 0x0022c94c,
+    .Oltanis = 0x0022eadc,
+    .Quartu = 0x002156fc,
+    .Kalebo = 0x0021cdcc,
+    .VeldinOrbit = 0x0021d000,
+    .Veldin2 = 0x00226898,
+    #else
     .Veldin1 = 0x00221304,
     .Novalis = 0x0023c44c,
     .Aridia = 0x0022a6c8,
@@ -394,6 +395,8 @@ void strafe_init(void)
 
     HOOK_JAL(GetAddress(&vaCameraStrafeUpdate_Hook), &cameraStrafe_Logic);
 }
+
+const char * p = "\x14";
 
 int main(void)
 {

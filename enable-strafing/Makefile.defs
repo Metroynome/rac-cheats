@@ -3,7 +3,7 @@ EE_OBJS = main.o
 ADDRESS = 000f0000
 USE_PNACH_NAME = 1
 
-EE_OBJS_DIR = obj/
+EE_OBJS_DIR = obj/$(EE_REGION)/
 EE_BIN_DIR = bin/
 EE_RELEASE_DIR = release/
 

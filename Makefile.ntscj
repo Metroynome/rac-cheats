@@ -1,8 +1,10 @@
 EE_REGION = ntscj
+
+include ${CURDIR}/Makefile.defs
+
 EE_LIBS = -lrac1ntscj
 EE_DEFS = -DRAC_NTSCJ -DRAC1_NTSCJ -DNTSCJ
 PNACH_NAME = SCPS-15037_56A35F77
 
-include ${CURDIR}/Makefile.defs
-include $(PS2SDK)/samples/Makefile.pref
+include ${CURDIR}/../Makefile.pref
 include ${CURDIR}/../Makefile.eeglobal

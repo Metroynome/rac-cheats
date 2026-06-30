@@ -1,11 +1,11 @@
 #include <tamtypes.h>
 
-#include <libgc/stdio.h>
-#include <libgc/string.h>
-#include <libgc/pad.h>
-#include <libgc/player.h>
+#include <librac1/stdio.h>
+#include <librac1/string.h>
+#include <librac1/pad.h>
+#include <librac1/player.h>
 
-#ifdef RAC2_PAL
+#ifdef RAC1_PAL
 #define SCREEN_WIDTH			(512)
 #define SCREEN_HEIGHT			(448)
 #else

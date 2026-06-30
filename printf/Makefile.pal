@@ -1,5 +1,0 @@
-EE_REGION = pal
-EE_LIBS = -lrac1pal
-EE_DEFS = -DRAC_PAL -DRAC1_PAL -DPAL
-
-include ${CURDIR}/Makefile.defs

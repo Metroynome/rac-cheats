@@ -1,6 +1,6 @@
 # rac-cheats
 
-Sample project showing how to use libdl to create cheat codes for Ratchet and Clank: Up Your Arsenal
+Sample project showing how to use librac1 to create cheat codes for Ratchet and Clank.
 ## Build with docker
 ### Clone Repos
 ```sh
@@ -14,7 +14,7 @@ docker run -it --rm -v "$PWD\:/src" ps2dev/ps2dev:v1.2.0
 cd src
 ```
 
-### Install libgc
+### Install librac1
 ```sh
 ./docker-init.sh
 ```

@@ -2,7 +2,7 @@ EE_FILE_NAME = test
 EE_OBJS = main.o
 ADDRESS = 000f0000
 
-EE_OBJS_DIR = obj/
+EE_OBJS_DIR = obj/$(EE_REGION)/
 EE_BIN_DIR = bin/
 
 EE_ELF = $(EE_BIN_DIR)$(EE_FILE_NAME).$(EE_REGION).elf
@@ -41,5 +41,3 @@ clean:
 	rm -f -r $(EE_OBJS_DIR)
 	rm -f -r $(EE_BIN_DIR)
 
-include $(CURDIR)/../Makefile.pref
-include $(CURDIR)/../Makefile.eeglobal

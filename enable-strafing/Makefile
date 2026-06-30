@@ -1,3 +1,5 @@
+.PHONY: all release clean clean-release
+
 all:
 	$(MAKE) -f ${CURDIR}/../Makefile.ntscu
 	$(MAKE) -f ${CURDIR}/../Makefile.pal

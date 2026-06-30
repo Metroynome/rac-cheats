@@ -17,6 +17,8 @@ EE_INCS := -I../../include -I$(PS2SDK)/ports/include
 EE_LDFLAGS = -fno-builtin -nostdlib -nostartfiles -L. -L../../lib -L$(PS2SDK)/ports/lib
 EE_CFLAGS := -D_PROGRAM_ENTRY=0x$(ADDRESS)
 
+.PHONY: all code release clean clean-release linker
+
 all: linker $(EE_OBJS_DIR) $(EE_BIN_DIR) $(EE_BIN) code
 
 $(EE_OBJS_DIR):
@@ -44,7 +46,7 @@ code:
 	cat template/footer.$(EE_REGION).pnach >> $(EE_PNACH)
 
 release: all $(EE_RELEASE_DIR)
-	cp $(EE_PNACH) $(EE_RELEASE_DIR)$(PNACH_NAME).pnach
+	cp -f $(EE_PNACH) $(EE_RELEASE_DIR)$(PNACH_NAME).pnach
 
 clean:
 	rm -rf linkfile

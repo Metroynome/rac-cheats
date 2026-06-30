@@ -1,3 +1,5 @@
+[Strafing Mod]
+author=Metroynome
 patch=1,EE,200F0A74,extended,001627E8
 patch=1,EE,200F0A70,extended,001626D0
 patch=1,EE,200F0A6C,extended,00162228

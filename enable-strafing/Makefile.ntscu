@@ -4,3 +4,5 @@ EE_DEFS = -DRAC_NTSCU -DRAC1_NTSCU -DNTSCU
 PNACH_NAME = SCUS-97199_CE4933D0
 
 include ${CURDIR}/Makefile.defs
+include $(PS2SDK)/samples/Makefile.pref
+include ${CURDIR}/../Makefile.eeglobal

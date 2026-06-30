@@ -55,7 +55,7 @@ VariableAddress_t vaDoBehavior_Hook = {
     .Kalebo = 0x0021cdcc,
     .VeldinOrbit = 0x0021d000,
     .Veldin2 = 0x00226898,
-    #else
+#elif RAC1_NTSCU
     .Veldin1 = 0x00221304,
     .Novalis = 0x0023c44c,
     .Aridia = 0x0022a6c8,

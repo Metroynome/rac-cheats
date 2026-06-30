@@ -15,7 +15,7 @@ EE_RAW  = $(EE_BIN_DIR)$(EE_FILE_NAME).$(EE_REGION).raw
 EE_OBJS := $(EE_OBJS:%=$(EE_OBJS_DIR)%)
 EE_INCS := -I../../include -I$(PS2SDK)/ports/include
 EE_LDFLAGS = -fno-builtin -nostdlib -nostartfiles -L. -L../../lib -L$(PS2SDK)/ports/lib
-EE_CFLAGS := -D_PROGRAM_ENTRY=0x$(ADDRESS) $(EE_DEFS)
+EE_CFLAGS := -D_PROGRAM_ENTRY=0x$(ADDRESS)
 
 all: linker $(EE_OBJS_DIR) $(EE_BIN_DIR) $(EE_BIN) code
 
@@ -53,6 +53,3 @@ clean:
 
 clean-release:
 	rm -f -r $(EE_RELEASE_DIR)
-
-include $(CURDIR)/../Makefile.pref
-include $(CURDIR)/../Makefile.eeglobal

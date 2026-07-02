@@ -352,8 +352,15 @@ VariableAddress_t vaCameraStrafeUpdate_Func = {
 
 void cameraStrafe_Logic(UpdateCam_t *camera)
 {
+    u32 camFollow = GetAddress(&vaCameraStrafeUpdate_Func);
+    if (!camFollow)
+        return;
+
+    if (!*(u32*)camFollow)
+        return;
+
     // call base
-    ((void (*)(UpdateCam_t*))GetAddress(&vaCameraStrafeUpdate_Func))(camera);
+    ((void (*)(UpdateCam_t*))camFollow)(camera);
     if (!strafe_camera_active || camera == 0 || camera->type != 0)
         return;
 
@@ -467,12 +474,19 @@ void strafe_init(void)
         camSpeed[2] *= 5; // fast: fast * 4
     }
 
+    u32 camHook = GetAddress(&vaCameraStrafeUpdate_Hook);
+    if (!camHook)
+        return;
+    
+    if (!*(u32*)camHook)
+        return;
+
+    HOOK_JAL(camHook, &cameraStrafe_Logic);
+
     // disable Skidding
     // if InitBodyState function tries to set to HERO_STATE_SKID,
     // skip all states doings.
     POKE_U32(GetAddress(&vaInitBodyState_Skid), 0x100008e2);
-
-    HOOK_JAL(GetAddress(&vaCameraStrafeUpdate_Hook), &cameraStrafe_Logic);
 }
 
 const char * p = "\x14";

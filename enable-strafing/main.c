@@ -15,7 +15,27 @@
 int strafe_camera_active = 0;
 
 VariableAddress_t vaDoBehavior_Hook = {
-#ifdef RAC1_NTSCJ
+#ifdef RAC1_PAL_V200
+	.Veldin1 = 0x00221a8c,
+	.Novalis = 0x0023cb3c,
+	.Aridia = 0x0022ade0,
+	.Kerwan = 0x00215cd8,
+	.Eudora = 0x00214fec,
+	.Rilgar = 0x0024c54c,
+	.NebulaG34 = 0x00234d74,
+	.Umbris = 0x00249874,
+	.Batalia = 0x002301c4,
+	.Gaspar = 0x0024166c,
+	.Orxon = 0x00215074,
+	.Pokitaru = 0x0024d1e0,
+	.Hoven = 0x0023f760,
+	.OltanisOrbit = 0x0022d4f4,
+	.Oltanis = 0x0022f664,
+	.Quartu = 0x002162a4,
+	.Kalebo = 0x0021d954,
+	.VeldinOrbit = 0x0021dca8,
+	.Veldin2 = 0x00227440,
+#elif RAC1_NTSCJ
     .Veldin1 = 0x00222a34,
     .Novalis = 0x0023dae4,
     .Aridia = 0x0022bd88,
@@ -79,7 +99,27 @@ VariableAddress_t vaDoBehavior_Hook = {
 };
 
 VariableAddress_t vaInitBodyState_Skid = {
-#ifdef RAC1_PAL
+#ifdef RAC1_PAL_V200
+	.Veldin1 = 0x00224e04,
+	.Novalis = 0x0023f6dc,
+	.Aridia = 0x0022d6f0,
+	.Kerwan = 0x00218d7c,
+	.Eudora = 0x00218314,
+	.Rilgar = 0x0024fd0c,
+	.NebulaG34 = 0x002375f8,
+	.Umbris = 0x0024cb8c,
+	.Batalia = 0x002333f0,
+	.Gaspar = 0x00244a74,
+	.Orxon = 0x0021837c,
+	.Pokitaru = 0x0025035c,
+	.Hoven = 0x00242998,
+	.OltanisOrbit = 0x00230994,
+	.Oltanis = 0x00232030,
+	.Quartu = 0x002192f4,
+	.Kalebo = 0x002211a4,
+	.VeldinOrbit = 0x002215cc,
+	.Veldin2 = 0x0022a618,
+#elif RAC1_PAL
     .Veldin1 = 0x002232fc,
     .Novalis = 0x0023dc34,
     .Aridia = 0x0022bbe8,
@@ -143,7 +183,27 @@ VariableAddress_t vaInitBodyState_Skid = {
 };
 
 VariableAddress_t vaCameraStrafeUpdate_Hook = {
-#ifdef RAC1_PAL
+#ifdef RAC1_PAL_V200
+	.Veldin1 = 0x002eb114,
+	.Novalis = 0x00316214,
+	.Aridia = 0x002f901c,
+	.Kerwan = 0x002e9994,
+	.Eudora = 0x002ee98c,
+	.Rilgar = 0x003267f4,
+	.NebulaG34 = 0x00313144,
+	.Umbris = 0x003269e4,
+	.Batalia = 0x00312cf4,
+	.Gaspar = 0x00312bd4,
+	.Orxon = 0x002f345c,
+	.Pokitaru = 0x00326484,
+	.Hoven = 0x00313244,
+	.OltanisOrbit = 0x00315624,
+	.Oltanis = 0x00311bec,
+	.Quartu = 0x002f5354,
+	.Kalebo = 0x002f1264,
+	.VeldinOrbit = 0x002fddac,
+	.Veldin2 = 0x00303d5c,
+#elif RAC1_PAL
     .Veldin1 = 0x002e960c,
     .Novalis = 0x0031476c,
     .Aridia = 0x002f7514,
@@ -207,7 +267,27 @@ VariableAddress_t vaCameraStrafeUpdate_Hook = {
 };
 
 VariableAddress_t vaCameraStrafeUpdate_Func = {
-#ifdef RAC1_PAL
+#ifdef RAC1_PAL_V200
+	.Veldin1 = 0x002e74b0,
+	.Novalis = 0x003125b0,
+	.Aridia = 0x002f5338,
+	.Kerwan = 0x002e5cb0,
+	.Eudora = 0x002ead28,
+	.Rilgar = 0x00322b90,
+	.NebulaG34 = 0x0030f460,
+	.Umbris = 0x00322d50,
+	.Batalia = 0x0030f060,
+	.Gaspar = 0x0030ef70,
+	.Orxon = 0x002ef7f8,
+	.Pokitaru = 0x00322820,
+	.Hoven = 0x0030f560,
+	.OltanisOrbit = 0x00311a58,
+	.Oltanis = 0x0030df88,
+	.Quartu = 0x002f1690,
+	.Kalebo = 0x002ed698,
+	.VeldinOrbit = 0x002fa148,
+	.Veldin2 = 0x003000c8,
+#elif RAC1_PAL
     .Veldin1 = 0x002e59a8,
     .Novalis = 0x00310b08,
     .Aridia = 0x002f3830,
@@ -270,30 +350,29 @@ VariableAddress_t vaCameraStrafeUpdate_Func = {
 #endif
 };
 
-void cameraStrafe_Logic(u32 camera)
+void cameraStrafe_Logic(UpdateCam_t *camera)
 {
-    u32 camera_state;
-
     // call base
-    ((void (*)(u32))GetAddress(&vaCameraStrafeUpdate_Func))(camera);
-    if (!strafe_camera_active || camera == 0 || *(s16*)(camera + 0x86) != 0)
+    ((void (*)(UpdateCam_t*))GetAddress(&vaCameraStrafeUpdate_Func))(camera);
+    if (!strafe_camera_active || camera == 0 || camera->type != 0)
         return;
 
     if (!playerCanControl())
         return;
 
     // force camera states to strafe.
-    camera_state = *(u32*)(camera + 0x70);
-    if (camera_state == 0)
+    CameraControl *camera_control = camera->control;
+    if (camera_control == 0)
         return;
 
-    *(s16*)(camera_state + 0x10) = 0;
-    *(u8*)(camera_state + 0x116) = 1;
-    *(float*)(camera_state + 0x11c) = 1.0;
-    *(float*)(camera_state + 0x120) = 0.2;
-    *(s16*)(camera_state + 0x12) = 0;
-    *(s16*)(camera_state + 0x14) = 0;
-    *(s16*)(camera_state + 0x16) = 0;
+    camera_control->followMode = 0;
+    camera_control->blendEnabled = 1;
+    // position smoothing is what causes the camera to zoom quickly in when strafing.
+    camera_control->positionSmoothing = 1.0;
+    camera_control->positionSmoothingAccel = 0.2;
+    camera_control->followRandTimer = 0;
+    camera_control->followBlendTimer = 0;
+    camera_control->followNoiseTimer = 0;
 }
 
 bool strafeStateCheck(int state)
@@ -318,15 +397,15 @@ bool strafeGadgetCheck(int gadget)
 
 void faceForward(Player *player)
 {
-	float *camRot = (float*)cameraGetCamera()->rot;
-    player->turn.ideal = camRot[2];
-    player->rot[2] = camRot[2];
+    Camera_t *camera = cameraGetCamera();
+    player->turn.ideal = camera->rot[2];
+    player->rot[2] = camera->rot[2];
 }
 
 void strafeApply(Player *player, float input_mag)
 {
-	float *camRot = (float*)cameraGetCamera()->rot;
-	float cam_yaw = camRot[2];
+    Camera_t *camera = cameraGetCamera();
+    float cam_yaw = camera->rot[2];
 
     faceForward(player);
 

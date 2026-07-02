@@ -1,0 +1,10 @@
+EE_REGION = v200.pal
+
+include ${CURDIR}/Makefile.defs
+
+EE_LIBS = -lrac1palv200
+EE_DEFS = -DRAC_PAL -DRAC1_PAL -DPAL -DRAC1_V200 -DRAC_V200 -DRAC_PAL_V200 -DRAC1_PAL_V200
+PNACH_NAME = SCES-50916_76F724A3
+
+include ${CURDIR}/../Makefile.pref
+include ${CURDIR}/../Makefile.eeglobal

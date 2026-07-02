@@ -2,7 +2,7 @@
 This mod brings strafing mechanics to Ratchet and Clank that try to match it's newer games in the serries, Ratchet and Clank: Up Your Arsenal and Ratchet: Deadlocked  No need to hold down a button, or anything like that!  It just works!
 
 ## Features
-* Always Strafing!
+* Always Strafing! (Except when holding wrench, swingshot and a few more gadgets)
  * No need to press and hold any buttons to strafe like in Going Commando!
 * Faster Camera!
  * The in game camera speeds (Slow, Medium and Fast) have all new values to play with!

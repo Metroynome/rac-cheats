@@ -14,4 +14,5 @@ You can find the PCSX2 PNACH file inside of the `releases` folder.  It is compat
 |-----------|------------------------|
 | Ratchet and Clank (NTSC-U) | SCUS-97199_CE4933D0.pnach |
 | Ratchet and Clank v1.00 (PAL) | SCES-50916_6A8F18B9.pnach |
+| Ratchet and Clank v2.00 (PAL) | SCES-50916_76F724A3.pnach |
 | Ratchet and Clank (NTSC-J) | SCPS-15037_56A35F77.pnach |

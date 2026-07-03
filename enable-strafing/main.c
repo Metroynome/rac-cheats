@@ -391,7 +391,8 @@ bool strafeStateCheck(int state)
         || state == PLAYER_STATE_CROUCH
         || state == PLAYER_STATE_QUICK_TURN
         || state == PLAYER_STATE_TARGETING
-        || state == PLAYER_STATE_GUN_WAITING;
+        || state == PLAYER_STATE_GUN_WAITING
+        || state == PLAYER_STATE_VISIBOMB;
 }
 
 bool strafeGadgetCheck(int gadget)
@@ -400,6 +401,8 @@ bool strafeGadgetCheck(int gadget)
         || gadget == GADGET_ID_SWINGSHOT
         || gadget == GADGET_ID_WALLOPER
         || gadget == GADGET_ID_PDA;
+        // || gadget == GADGET_ID_HYDRODISPLACER
+        // || gadget == GADGET_ID_TRESPASSER;
 }
 
 void faceForward(Player *player)
@@ -471,7 +474,7 @@ void strafe_init(void)
     if (camSpeed[0] != camSpeed[1]) {
         camSpeed[0] = camSpeed[1]; // slow: medium
         camSpeed[1] *= 3; // medium: mediun * 3
-        camSpeed[2] *= 5; // fast: fast * 4
+        camSpeed[2] *= 5; // fast: fast * 5
     }
 
     u32 camHook = GetAddress(&vaCameraStrafeUpdate_Hook);

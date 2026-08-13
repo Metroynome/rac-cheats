@@ -78,12 +78,12 @@ static int modmenuTitleScreenY = 28;
 static int modmenuTitleWindowW = 192;
 static int modmenuTitleWindowH = 38;
 static ModMenuOption_t modmenuOptions[] = {
-    { "Submenu 1", (UiMenu_t *)0x001b40e0 },
-    { "Submenu 2", (UiMenu_t *)0x001b4980 },
-    { "Submenu 3", (UiMenu_t *)0x001b4ac8 },
-    { "Submenu 4", (UiMenu_t *)0x001b51a0 },
-    { "Submenu 5", (UiMenu_t *)0x001b5528 },
-    { "Submenu 6", MOD_STOCK_HELP_MENU },
+    { "Submenu 1", 0 },
+    { "Submenu 2", 0 },
+    { "Submenu 3", 0 },
+    { "Submenu 4", 0 },
+    { "Submenu 5", 0 },
+    { "Submenu 6", 0 },
 };
 #define MOD_OPTION_COUNT ((int)MOD_ARRAY_COUNT(modmenuOptions))
 #define MOD_OPTION_TERMINATOR_COUNT 1
@@ -96,6 +96,17 @@ static const char *modmenuFooterLabels[2] = {
     "\x11 Select",
     "\x12 Exit"
 };
+static const char *modmenuSubmenuBodyText = "This is a custom submenu.";
+static const char *modmenuSubmenuFooterText = "\x12 Back";
+static UiMenu_t modmenuSubmenus[MOD_ARRAY_COUNT(modmenuOptions)];
+static UiElementText_t modmenuSubmenuTitles[MOD_ARRAY_COUNT(modmenuOptions)];
+static UiElementText_t modmenuSubmenuBodies[MOD_ARRAY_COUNT(modmenuOptions)];
+static UiElementText_t modmenuSubmenuFooters[MOD_ARRAY_COUNT(modmenuOptions)];
+static M1138_MenuItem_Pvar_t modmenuSubmenuTitleFrames[MOD_ARRAY_COUNT(modmenuOptions)];
+static M1138_MenuItem_Pvar_t modmenuSubmenuBodyFrames[MOD_ARRAY_COUNT(modmenuOptions)];
+static M1138_MenuItem_Pvar_t modmenuSubmenuFooterFrames[MOD_ARRAY_COUNT(modmenuOptions)];
+static char modmenuListLabels[MOD_ARRAY_COUNT(modmenuOptions)][64];
+static int modmenuForceCustomMenuFrames;
 
 static void modmenuSetVector(VECTOR output, float x, float y, float z)
 {
@@ -114,6 +125,7 @@ static void modmenuRectVectors(VECTOR tl, VECTOR tr, VECTOR bl, VECTOR br, float
 }
 
 static void modmenuMoveSelection(UiElementList_t *element, int delta);
+static void modmenuSetActiveFrameState(void);
 
 static int modmenuRawButtons(void)
 {
@@ -236,6 +248,16 @@ static void modmenuOptionLine(char *line, int option)
     int index = 0;
     modmenuAppendText(line, &index, modmenuSelected == option ? "> " : "  ");
     modmenuAppendText(line, &index, modmenuOptions[option].label);
+}
+
+static const char *modmenuOptionDrawLabel(int option)
+{
+    if (option < 0 || option >= MOD_OPTION_COUNT) {
+        return "";
+    }
+
+    modmenuOptionLine(modmenuListLabels[option], option);
+    return modmenuListLabels[option];
 }
 
 static int modmenuFontWindowBegin(void)
@@ -503,7 +525,7 @@ static u64 modmenuUiListDraw(UiElementList_t *element)
     window.scrollOffset = 0;
 
     for (i = 0; i < MOD_OPTION_COUNT; i++) {
-        const char *label = modmenuOptions[i].label;
+        const char *label = modmenuOptionDrawLabel(i);
         u32 color = (i == modmenuSelected) ? SelectedColor : NotSelectedColor;
         window.clipTop = (s16)(listTop + (i * rowHeight));
         window.clipBottom = (s16)(listTop + ((i + 1) * rowHeight));
@@ -544,12 +566,19 @@ static int modmenuChooseSelection(void)
         return 0;
     }
 
-    nextMenu = modmenuOptions[modmenuSelected].pNextMenu;
+    nextMenu = &modmenuSubmenus[modmenuSelected];
+    printf("\nmod-menu choose sel=%d next=%08x optNext=%08x active=%08x change=%08x",
+        modmenuSelected,
+        (u32)nextMenu,
+        (u32)modmenuOptions[modmenuSelected].pNextMenu,
+        (u32)UI_ACTIVE_POINTER,
+        (u32)UI_CHANGE_TO_POINTER);
     if (!nextMenu) {
         return 0;
     }
 
     UI_CHANGE_TO_POINTER = nextMenu;
+    printf(" -> %08x", (u32)UI_CHANGE_TO_POINTER);
     return 1;
 }
 static void modmenuReturnToPauseMenu(void)
@@ -639,6 +668,195 @@ static void modmenuPollActiveInput(void)
         modmenuApplyDirection(&modmenuList, 0);
     }
 }
+static int modmenuFindSubmenuIndex(UiElementBase_t *element)
+{
+    int i;
+
+    for (i = 0; i < MOD_OPTION_COUNT; i++) {
+        if (element == (UiElementBase_t *)&modmenuSubmenuTitles[i] ||
+            element == (UiElementBase_t *)&modmenuSubmenuBodies[i] ||
+            element == (UiElementBase_t *)&modmenuSubmenuFooters[i]) {
+            return i;
+        }
+    }
+
+    return 0;
+}
+
+static u64 modmenuSubmenuUpdate(UiElementBase_t *element)
+{
+    (void)element;
+
+    if (P1_PAD->hudBitsOn & PAD_REVERSED_START) {
+        return 1;
+    }
+    if (P1_PAD->hudBitsOn & PAD_REVERSED_TRIANGLE) {
+        modmenuSyncSelection(&modmenuList);
+        modmenuMenu.pSelectedElement = (UiElementBase_t *)&modmenuList;
+        modmenuForceCustomMenuFrames = 4;
+        modmenuSetActiveFrameState();
+        UI_CHANGE_TO_POINTER = &modmenuMenu;
+    }
+
+    return 0;
+}
+
+static u64 modmenuSubmenuTitleDraw(UiElementText_t *element)
+{
+    ModFontSetFn fontSet;
+    ModFontPrintWindowFn fontPrintWindow;
+    ModFontWindow_t window;
+    int index;
+    int font;
+
+    if (!element) {
+        return 0;
+    }
+
+    index = modmenuFindSubmenuIndex((UiElementBase_t *)element);
+    fontSet = (ModFontSetFn)GetAddressImmediate(&vaFontSet);
+    fontPrintWindow = (ModFontPrintWindowFn)GetAddressImmediate(&vaFontPrintWindow);
+    if (!fontSet || !fontPrintWindow || !modmenuUiFontWindowBegin()) {
+        return 0;
+    }
+
+    font = fontSet(3);
+    window.clipTop = 4;
+    window.clipBottom = (s16)(element->base.windowH - 4);
+    window.clipLeft = 1;
+    window.clipRight = (s16)(element->base.windowW - 4);
+    window.x = (s16)(element->base.windowW / 2);
+    window.y = (s16)(element->base.windowH / 2);
+    window.pad0 = 0;
+    window.lineHeight = MOD_TITLE_FONT_LINE_HEIGHT;
+    window.flags = 0x000b;
+    window.pad1 = 0;
+    window.scrollOffset = 0;
+    fontPrintWindow(&window, MOD_COLOR_SHADOW, modmenuOptions[index].label, -1, font, (void *)0x001c3d10);
+    window.y = (s16)(window.y - 1);
+    fontPrintWindow(&window, TitleColor, modmenuOptions[index].label, -1, font, (void *)0x001c3d10);
+    modmenuFontWindowEnd();
+    return UI_DRAW_RESULT_EXACT_SIZE;
+}
+
+static u64 modmenuSubmenuBodyDraw(UiElementText_t *element)
+{
+    ModFontSetFn fontSet;
+    ModFontPrintWindowFn fontPrintWindow;
+    ModFontWindow_t window;
+    int index;
+    int font;
+
+    if (!element) {
+        return 0;
+    }
+
+    index = modmenuFindSubmenuIndex((UiElementBase_t *)element);
+    if (index < 0 || index >= MOD_OPTION_COUNT) {
+        index = 0;
+    }
+
+    fontSet = (ModFontSetFn)GetAddressImmediate(&vaFontSet);
+    fontPrintWindow = (ModFontPrintWindowFn)GetAddressImmediate(&vaFontPrintWindow);
+    if (!fontSet || !fontPrintWindow || !modmenuUiFontWindowBegin()) {
+        return 0;
+    }
+
+    font = fontSet(1);
+    window.clipTop = 4;
+    window.clipBottom = (s16)(element->base.windowH - 8);
+    window.clipLeft = 4;
+    window.clipRight = (s16)(element->base.windowW - 8);
+    window.x = 8;
+    window.y = 16;
+    window.pad0 = 0;
+    window.lineHeight = 0x0c;
+    window.flags = 0x0000;
+    window.pad1 = 0;
+    window.scrollOffset = 0;
+    fontPrintWindow(&window, MOD_COLOR_SHADOW, modmenuOptions[index].label, -1, font, (void *)0x001c35d0);
+    window.y = 15;
+    fontPrintWindow(&window, SelectedColor, modmenuOptions[index].label, -1, font, (void *)0x001c35d0);
+    window.y = 34;
+    fontPrintWindow(&window, MOD_COLOR_SHADOW, modmenuSubmenuBodyText, -1, font, (void *)0x001c35d0);
+    window.y = 33;
+    fontPrintWindow(&window, NotSelectedColor, modmenuSubmenuBodyText, -1, font, (void *)0x001c35d0);
+    modmenuFontWindowEnd();
+    return UI_DRAW_RESULT_EXACT_SIZE;
+}
+
+static u64 modmenuSubmenuFooterDraw(UiElementText_t *element)
+{
+    ModFontSetFn fontSet;
+    ModFontPrintWindowFn fontPrintWindow;
+    ModFontWindow_t window;
+    int font;
+
+    if (!element) {
+        return 0;
+    }
+
+    fontSet = (ModFontSetFn)GetAddressImmediate(&vaFontSet);
+    fontPrintWindow = (ModFontPrintWindowFn)GetAddressImmediate(&vaFontPrintWindow);
+    if (!fontSet || !fontPrintWindow || !modmenuUiFontWindowBegin()) {
+        return 0;
+    }
+
+    font = fontSet(3);
+    window.clipTop = 4;
+    window.clipBottom = (s16)(element->base.windowH - 4);
+    window.clipLeft = 1;
+    window.clipRight = (s16)(element->base.windowW - 4);
+    window.x = (s16)(element->base.windowW / 2);
+    window.y = (s16)(element->base.windowH / 2);
+    window.pad0 = 0;
+    window.lineHeight = MOD_TITLE_FONT_LINE_HEIGHT;
+    window.flags = 0x000b;
+    window.pad1 = 0;
+    window.scrollOffset = 0;
+    fontPrintWindow(&window, MOD_COLOR_SHADOW, modmenuSubmenuFooterText, -1, font, (void *)0x001c3d10);
+    window.y = (s16)(window.y - 1);
+    fontPrintWindow(&window, TitleColor, modmenuSubmenuFooterText, -1, font, (void *)0x001c3d10);
+    modmenuFontWindowEnd();
+    return UI_DRAW_RESULT_EXACT_SIZE;
+}
+
+static void modmenuCreateSubmenus(void)
+{
+    VECTOR tl;
+    VECTOR tr;
+    VECTOR bl;
+    VECTOR br;
+    int i;
+
+    for (i = 0; i < MOD_OPTION_COUNT; i++) {
+        uiMenuInit(&modmenuSubmenus[i], &modmenuMenu, MOD_MENU_ID + 1 + i);
+        uiMenuCopyFrameAnims(&modmenuSubmenus[i], MOD_STOCK_HELP_MENU);
+
+        modmenuRectVectors(tl, tr, bl, br, 275.0f, 28.0f, 260.0f, 20.0f);
+        uiCreateTitle(&modmenuSubmenuTitles[i], &modmenuSubmenuTitleFrames[i], tl, tr, bl, br, 0x4f5e);
+        modmenuSubmenuTitles[i].base.pUpdate = 0;
+        modmenuSubmenuTitles[i].base.pDraw = (void *)modmenuSubmenuTitleDraw;
+        modmenuSubmenuTitles[i].base.renderFlags = 0;
+
+        modmenuRectVectors(tl, tr, bl, br, 195.0f, 87.0f, 123.0f, 213.0f);
+        uiCreateText(&modmenuSubmenuBodies[i], &modmenuSubmenuBodyFrames[i], tl, tr, bl, br, 0, 0);
+        modmenuSubmenuBodies[i].base.pUpdate = (void *)modmenuSubmenuUpdate;
+        modmenuSubmenuBodies[i].base.pDraw = (void *)modmenuSubmenuBodyDraw;
+        modmenuSubmenuBodies[i].base.renderFlags = 0;
+
+        modmenuRectVectors(tl, tr, bl, br, 195.0f, 318.0f, 123.0f, 70.0f);
+        uiCreateText(&modmenuSubmenuFooters[i], &modmenuSubmenuFooterFrames[i], tl, tr, bl, br, 0, 0);
+        modmenuSubmenuFooters[i].base.pUpdate = 0;
+        modmenuSubmenuFooters[i].base.pDraw = (void *)modmenuSubmenuFooterDraw;
+        modmenuSubmenuFooters[i].base.renderFlags = 0;
+
+        uiMenuSetElement(&modmenuSubmenus[i], 0, (UiElementBase_t *)&modmenuSubmenuTitles[i]);
+        uiMenuSetElement(&modmenuSubmenus[i], 3, (UiElementBase_t *)&modmenuSubmenuBodies[i]);
+        uiMenuSetElement(&modmenuSubmenus[i], 4, (UiElementBase_t *)&modmenuSubmenuFooters[i]);
+        modmenuSubmenus[i].pSelectedElement = (UiElementBase_t *)&modmenuSubmenuBodies[i];
+    }
+}
 static void modmenuSetProbeFrame(M1138_MenuItem_Pvar_t *frame, float x, float y, float w, float h)
 {
     if (!frame) {
@@ -652,6 +870,17 @@ static void modmenuUpdateVisualProbe(void)
     modmenuSetProbeFrame(&modmenuTitleFrame, 275.0f, 28.0f, 260.0f, 20.0f);
     modmenuSetProbeFrame(&modmenuListFrame, 300.0f, 56.0f, 210.0f, 96.0f);
     modmenuSetProbeFrame(&modmenuFooterFrame, 300.0f, 160.0f, 210.0f, 24.0f);
+}
+
+static void modmenuUpdateSubmenuVisualProbe(int index)
+{
+    if (index < 0 || index >= MOD_OPTION_COUNT) {
+        return;
+    }
+
+    modmenuSetProbeFrame(&modmenuSubmenuTitleFrames[index], 275.0f, 28.0f, 260.0f, 20.0f);
+    modmenuSetProbeFrame(&modmenuSubmenuBodyFrames[index], 195.0f, 87.0f, 123.0f, 213.0f);
+    modmenuSetProbeFrame(&modmenuSubmenuFooterFrames[index], 195.0f, 318.0f, 123.0f, 70.0f);
 }
 
 static void modmenuRestoreFrameEnables(void)
@@ -683,6 +912,7 @@ static void modmenuSetActiveFrameState(void)
         modmenuMenu.pElements[i] = 0;
     }
 
+    modmenuUpdateVisualProbe();
     MOD_UI_FRAME_ENABLES[0] = 1;
     MOD_UI_FRAME_ENABLES[3] = 1;
     MOD_UI_FRAME_ENABLES[4] = 1;
@@ -703,6 +933,45 @@ static void modmenuSetActiveFrameState(void)
     modmenuFooter.base.renderFlags = 0;
 }
 
+static void modmenuSetActiveSubmenuFrameState(int index)
+{
+    int i;
+
+    if (index < 0 || index >= MOD_OPTION_COUNT) {
+        return;
+    }
+
+    if (!modmenuFrameEnablesSaved) {
+        for (i = 0; i < UI_MENU_MAX_ELEMENTS; i++) {
+            modmenuSavedFrameEnables[i] = MOD_UI_FRAME_ENABLES[i];
+        }
+        modmenuFrameEnablesSaved = 1;
+    }
+
+    for (i = 0; i < UI_MENU_MAX_ELEMENTS; i++) {
+        MOD_UI_FRAME_ENABLES[i] = 0;
+        modmenuSubmenus[index].pElements[i] = 0;
+    }
+
+    modmenuUpdateSubmenuVisualProbe(index);
+    MOD_UI_FRAME_ENABLES[0] = 1;
+    MOD_UI_FRAME_ENABLES[3] = 1;
+    MOD_UI_FRAME_ENABLES[4] = 1;
+
+    uiMenuSetElement(&modmenuSubmenus[index], 0, (UiElementBase_t *)&modmenuSubmenuTitles[index]);
+    uiMenuSetElement(&modmenuSubmenus[index], 3, (UiElementBase_t *)&modmenuSubmenuBodies[index]);
+    uiMenuSetElement(&modmenuSubmenus[index], 4, (UiElementBase_t *)&modmenuSubmenuFooters[index]);
+    modmenuSubmenus[index].pSelectedElement = (UiElementBase_t *)&modmenuSubmenuBodies[index];
+    modmenuSubmenuTitles[index].base.pUpdate = 0;
+    modmenuSubmenuBodies[index].base.pUpdate = (void *)modmenuSubmenuUpdate;
+    modmenuSubmenuFooters[index].base.pUpdate = 0;
+    modmenuSubmenuTitles[index].base.pDraw = (void *)modmenuSubmenuTitleDraw;
+    modmenuSubmenuBodies[index].base.pDraw = (void *)modmenuSubmenuBodyDraw;
+    modmenuSubmenuFooters[index].base.pDraw = (void *)modmenuSubmenuFooterDraw;
+    modmenuSubmenuTitles[index].base.renderFlags = 0;
+    modmenuSubmenuBodies[index].base.renderFlags = 0;
+    modmenuSubmenuFooters[index].base.renderFlags = 0;
+}
 static UiPauseMenu_t *modmenuGetPauseMenu(void)
 {
     UiMenu_t *activeMenu = (UiMenu_t *)UI_ACTIVE_POINTER;
@@ -715,6 +984,19 @@ static UiPauseMenu_t *modmenuGetPauseMenu(void)
 static int modmenuIsActiveMenu(void)
 {
     return UI_ACTIVE_POINTER == &modmenuMenu;
+}
+
+static int modmenuActiveSubmenuIndex(void)
+{
+    int i;
+
+    for (i = 0; i < MOD_OPTION_COUNT; i++) {
+        if (UI_ACTIVE_POINTER == &modmenuSubmenus[i]) {
+            return i;
+        }
+    }
+
+    return -1;
 }
 
 static void modmenuCreateTitle(void)
@@ -742,7 +1024,7 @@ static void modmenuCreateList(void)
     for (i = 0; i < MOD_OPTION_COUNT; i++) {
         modmenuEntries[i].labelStringId.flags = 0;
         modmenuEntries[i].labelStringId.id = 0;
-        modmenuEntries[i].pNextMenu = modmenuOptions[i].pNextMenu;
+        modmenuEntries[i].pNextMenu = &modmenuSubmenus[i];
         modmenuEntries[i].timeSelected = 0;
     }
     modmenuEntries[MOD_OPTION_ENTRY_COUNT - 1].labelStringId.flags = 0;
@@ -787,6 +1069,7 @@ static void modmenuPrepareCustomMenu(UiMenu_t *parent)
     modmenuCreateTitle();
     modmenuCreateList();
     modmenuCreateFooter();
+    modmenuCreateSubmenus();
     uiMenuCopyFrameAnims(&modmenuMenu, MOD_STOCK_HELP_MENU);
     for (i = 0; i < UI_MENU_MAX_ELEMENTS; i++) {
         uiMenuSetElement(&modmenuMenu, i, 0);
@@ -859,9 +1142,22 @@ static void modmenuDraw(void)
     modmenuEnsureState();
     modmenuPatchHelpEntry();
 
+    if (modmenuForceCustomMenuFrames > 0) {
+        modmenuForceCustomMenuFrames--;
+        modmenuSetActiveFrameState();
+    }
+
     if (modmenuIsActiveMenu()) {
         modmenuSetActiveFrameState();
         return;
+    }
+
+    {
+        int submenuIndex = modmenuActiveSubmenuIndex();
+        if (submenuIndex >= 0) {
+            modmenuSetActiveSubmenuFrameState(submenuIndex);
+            return;
+        }
     }
 
     modmenuRestoreFrameEnables();

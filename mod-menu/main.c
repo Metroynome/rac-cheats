@@ -52,14 +52,14 @@ static u32 TitleColor = 0x80ffa888;
 static u32 SelectedColor = 0x80ffa888;
 static u32 NotSelectedColor = 0x80b0b0b0;
 
-static int modmenuStateMagic = MOD_STATE_MAGIC;
-static int modmenuSelected = 0;
-static int modmenuLastRawButtons = 0xffff;
-static int modmenuLastPressureButtons = 0;
-static int modmenuLastHudButtons = 0;
-static int modmenuDpadRepeatTimer = 0;
-static int modmenuLastDirection = 0;
-static UiMenu_t *modmenuOriginalHelpMenu = MOD_PTR_UNSET;
+static int modmenuStateMagic;
+static int modmenuSelected;
+static int modmenuLastRawButtons;
+static int modmenuLastPressureButtons;
+static int modmenuLastHudButtons;
+static int modmenuDpadRepeatTimer;
+static int modmenuLastDirection;
+static UiMenu_t *modmenuOriginalHelpMenu;
 static UiMenu_t modmenuMenu;
 static UiElementText_t modmenuTitle;
 static UiElementList_t modmenuList;
@@ -67,12 +67,12 @@ static UiElementFooter_t modmenuFooter;
 static M1138_MenuItem_Pvar_t modmenuTitleFrame;
 static M1138_MenuItem_Pvar_t modmenuListFrame;
 static M1138_MenuItem_Pvar_t modmenuFooterFrame;
-static int modmenuFrameEnablesSaved = 0;
+static int modmenuFrameEnablesSaved;
 static int modmenuSavedFrameEnables[UI_MENU_MAX_ELEMENTS];
-static int modmenuTitleDrawHits = 0;
-static int modmenuListDrawHits = 0;
-static int modmenuListUpdateHits = 0;
-static int modmenuFooterDrawHits = 0;
+static int modmenuTitleDrawHits;
+static int modmenuListDrawHits;
+static int modmenuListUpdateHits;
+static int modmenuFooterDrawHits;
 static int modmenuTitleScreenX = 21;
 static int modmenuTitleScreenY = 28;
 static int modmenuTitleWindowW = 192;
@@ -476,7 +476,7 @@ static u64 modmenuUiListDraw(UiElementList_t *element)
     }
 
     if ((UI_FRAME_COUNTER & 0x1f) == 1) {
-        printf("\nmod-menu list custom pDraw elem=%08x win=%d,%d pos=%d,%d sel=%d row=%d top=%d",
+        printf("\nmod-menu list custom pDraw elem=%08x win=%d,%d pos=%d,%d sel=%d row=%d top=%d hud=%08x hudOn=%08x digOn=%08x raw=%04x up=%02x down=%02x",
             (u32)element,
             element->base.windowW,
             element->base.windowH,
@@ -484,7 +484,13 @@ static u64 modmenuUiListDraw(UiElementList_t *element)
             element->base.screenY,
             modmenuSelected,
             rowHeight,
-            listTop);
+            listTop,
+            P1_PAD->hudBits,
+            P1_PAD->hudBitsOn,
+            P1_PAD->digitalBitsOn,
+            modmenuRawButtons(),
+            P1_PAD->up_p,
+            P1_PAD->down_p);
     }
 
     window.clipLeft = 1;
@@ -533,7 +539,6 @@ static int modmenuChooseSelection(void)
 {
     UiMenu_t *nextMenu;
 
-    modmenuSelected = modmenuList.selectedIndex;
     modmenuSyncSelection(&modmenuList);
     if (modmenuSelected < 0 || modmenuSelected >= MOD_OPTION_COUNT) {
         return 0;
@@ -571,11 +576,46 @@ static u64 modmenuUiFrameUpdate(UiElementBase_t *element)
 
 static u64 modmenuUiUpdate(UiElementList_t *element)
 {
-    (void)element;
+    int pressed;
+    int debugButtons;
+
+    if (!element) {
+        element = &modmenuList;
+    }
 
     modmenuListUpdateHits++;
-    if (P1_PAD->hudBitsOn & PAD_REVERSED_START) {
+    modmenuSyncSelection(element);
+    pressed = (element->modeFlags & 0x1) ? P1_PAD->digitalBitsOn : P1_PAD->hudBitsOn;
+    debugButtons = PAD_REVERSED_UP | PAD_REVERSED_DOWN | PAD_REVERSED_CROSS | PAD_REVERSED_TRIANGLE | PAD_REVERSED_START;
+    if (((UI_FRAME_COUNTER & 0x1f) == 1) || (pressed & debugButtons)) {
+        printf("\nmod-menu select idx custom=%d list=%d elem=%d pressed=%08x hudOn=%08x digOn=%08x mode=%08x",
+            modmenuSelected,
+            modmenuList.selectedIndex,
+            element->selectedIndex,
+            pressed,
+            P1_PAD->hudBitsOn,
+            P1_PAD->digitalBitsOn,
+            element->modeFlags);
+    }
+
+    if (pressed & PAD_REVERSED_START) {
         return 1;
+    }
+    if (pressed & PAD_REVERSED_TRIANGLE) {
+        modmenuReturnToPauseMenu();
+        return 0;
+    }
+    if (pressed & PAD_REVERSED_CROSS) {
+        modmenuChooseSelection();
+        return 0;
+    }
+    if (pressed & PAD_REVERSED_UP) {
+        modmenuMoveSelection(element, -1);
+        return 0;
+    }
+    if (pressed & PAD_REVERSED_DOWN) {
+        modmenuMoveSelection(element, 1);
+        return 0;
     }
 
     return 0;
@@ -584,18 +624,19 @@ static u64 modmenuUiUpdate(UiElementList_t *element)
 static void modmenuPollActiveInput(void)
 {
     int pressed = P1_PAD->hudBitsOn;
+    int direction = modmenuReadDirection();
 
     if (pressed & PAD_REVERSED_TRIANGLE) {
         modmenuReturnToPauseMenu();
     }
-    else if (pressed & PAD_REVERSED_UP) {
-        modmenuMoveSelection(&modmenuList, -1);
-    }
-    else if (pressed & PAD_REVERSED_DOWN) {
-        modmenuMoveSelection(&modmenuList, 1);
+    else if (direction != 0) {
+        modmenuApplyDirection(&modmenuList, direction);
     }
     else if (pressed & PAD_REVERSED_CROSS) {
         modmenuChooseSelection();
+    }
+    else {
+        modmenuApplyDirection(&modmenuList, 0);
     }
 }
 static void modmenuSetProbeFrame(M1138_MenuItem_Pvar_t *frame, float x, float y, float w, float h)
@@ -819,7 +860,6 @@ static void modmenuDraw(void)
     modmenuPatchHelpEntry();
 
     if (modmenuIsActiveMenu()) {
-        modmenuPollActiveInput();
         modmenuSetActiveFrameState();
         return;
     }

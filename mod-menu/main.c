@@ -15,7 +15,7 @@ extern VariableAddress_t vaFontPrintWindow;
 
 #define MOD_COLOR_SHADOW 0x80000000
 #define MOD_STATE_MAGIC 0x4d4d3046
-#define MOD_OPTION_COUNT 5
+#define MOD_ARRAY_COUNT(array) (sizeof(array) / sizeof((array)[0]))
 #define MOD_PTR_UNSET ((UiMenu_t *)0xffffffff)
 #define MOD_MENU_ID UI_MENU_CUSTOM
 #define MOD_STOCK_HELP_MENU ((UiMenu_t *)0x001b3e18)
@@ -43,13 +43,22 @@ typedef u64 (*ModUiListDrawFn)(UiElementList_t *element);
 typedef int (*ModFontSetFn)(int font);
 typedef int (*ModFontPrintWindowFn)(void *window, u32 color, const char *string, int length, u32 font, void *fontTable);
 
+typedef struct ModMenuOption {
+    const char *label;
+    UiMenu_t *pNextMenu;
+} ModMenuOption_t;
+
 static u32 TitleColor = 0x80ffa888;
-static u32 SelectedColor = 0x80006060;
-static u32 NotSelectedColor = 0x80303030;
+static u32 SelectedColor = 0x80ffa888;
+static u32 NotSelectedColor = 0x80b0b0b0;
 
 static int modmenuStateMagic = MOD_STATE_MAGIC;
 static int modmenuSelected = 0;
 static int modmenuLastRawButtons = 0xffff;
+static int modmenuLastPressureButtons = 0;
+static int modmenuLastHudButtons = 0;
+static int modmenuDpadRepeatTimer = 0;
+static int modmenuLastDirection = 0;
 static UiMenu_t *modmenuOriginalHelpMenu = MOD_PTR_UNSET;
 static UiMenu_t modmenuMenu;
 static UiElementText_t modmenuTitle;
@@ -68,15 +77,24 @@ static int modmenuTitleScreenX = 21;
 static int modmenuTitleScreenY = 28;
 static int modmenuTitleWindowW = 192;
 static int modmenuTitleWindowH = 38;
-static UiOptionEntry_t modmenuEntries[MOD_OPTION_COUNT + 1];
+static ModMenuOption_t modmenuOptions[] = {
+    { "Submenu 1", (UiMenu_t *)0x001b40e0 },
+    { "Submenu 2", (UiMenu_t *)0x001b4980 },
+    { "Submenu 3", (UiMenu_t *)0x001b4ac8 },
+    { "Submenu 4", (UiMenu_t *)0x001b51a0 },
+    { "Submenu 5", (UiMenu_t *)0x001b5528 },
+    { "Submenu 6", MOD_STOCK_HELP_MENU },
+};
+#define MOD_OPTION_COUNT ((int)MOD_ARRAY_COUNT(modmenuOptions))
+#define MOD_OPTION_TERMINATOR_COUNT 1
+
+static UiOptionEntry_t modmenuEntries[MOD_ARRAY_COUNT(modmenuOptions) + MOD_OPTION_TERMINATOR_COUNT];
+#define MOD_OPTION_ENTRY_COUNT ((int)MOD_ARRAY_COUNT(modmenuEntries))
 static UiOptionEntry_t modmenuFooterEntries[3];
-static int modmenuOptionEnabled[MOD_OPTION_COUNT] = { 0, 0, 0, 0, 0 };
-static const char *modmenuOptionLabels[MOD_OPTION_COUNT] = {
-    "Help Log",
-    "Controls",
-    "Moves",
-    "Weapons",
-    "Gadgets"
+static int modmenuOptionEnabled[MOD_ARRAY_COUNT(modmenuOptions)];
+static const char *modmenuFooterLabels[2] = {
+    "\x11 Select",
+    "\x12 Exit"
 };
 
 static void modmenuSetVector(VECTOR output, float x, float y, float z)
@@ -95,6 +113,8 @@ static void modmenuRectVectors(VECTOR tl, VECTOR tr, VECTOR bl, VECTOR br, float
     modmenuSetVector(br, x + w, y + h, 0.0f);
 }
 
+static void modmenuMoveSelection(UiElementList_t *element, int delta);
+
 static int modmenuRawButtons(void)
 {
     return (~P1_PAD->btns) & 0xffff;
@@ -103,6 +123,89 @@ static int modmenuRawButtons(void)
 static int modmenuRawPressed(int raw, int mask)
 {
     return (raw & mask) && !(modmenuLastRawButtons & mask);
+}
+
+static int modmenuPressureButtons(void)
+{
+    int buttons = 0;
+
+    if (P1_PAD->up_p) {
+        buttons |= PAD_UP;
+    }
+    if (P1_PAD->down_p) {
+        buttons |= PAD_DOWN;
+    }
+    if (P1_PAD->left_p) {
+        buttons |= PAD_LEFT;
+    }
+    if (P1_PAD->right_p) {
+        buttons |= PAD_RIGHT;
+    }
+
+    return buttons;
+}
+
+static int modmenuPressurePressed(int buttons, int mask)
+{
+    return (buttons & mask) && !(modmenuLastPressureButtons & mask);
+}
+
+static int modmenuHudPressed(int buttons, int mask)
+{
+    return (buttons & mask) && !(modmenuLastHudButtons & mask);
+}
+
+static int modmenuDirectionPressed(int hud, int pressure, int rawMask, int hudMask)
+{
+    if (modmenuPressurePressed(pressure, rawMask)) {
+        return 1;
+    }
+    return modmenuHudPressed(hud, hudMask);
+}
+static int modmenuDpadHeld(int rawMask, int hudMask, unsigned char pressure)
+{
+    if (modmenuRawButtons() & rawMask) {
+        return 1;
+    }
+    if (pressure) {
+        return 1;
+    }
+    if (P1_PAD->hudBits & hudMask) {
+        return 1;
+    }
+    if (P1_PAD->hudBitsOn & hudMask) {
+        return 1;
+    }
+    return 0;
+}
+
+static int modmenuReadDirection(void)
+{
+    if (modmenuDpadHeld(PAD_UP, PAD_REVERSED_UP, P1_PAD->up_p)) {
+        return -1;
+    }
+    if (modmenuDpadHeld(PAD_DOWN, PAD_REVERSED_DOWN, P1_PAD->down_p)) {
+        return 1;
+    }
+    return 0;
+}
+
+static void modmenuApplyDirection(UiElementList_t *element, int direction)
+{
+    if (direction == 0) {
+        modmenuLastDirection = 0;
+        modmenuDpadRepeatTimer = 0;
+        return;
+    }
+
+    if (direction != modmenuLastDirection || modmenuDpadRepeatTimer <= 0) {
+        modmenuMoveSelection(element, direction);
+        modmenuDpadRepeatTimer = direction == modmenuLastDirection ? 5 : 14;
+        modmenuLastDirection = direction;
+        return;
+    }
+
+    modmenuDpadRepeatTimer--;
 }
 
 static int modmenuTextLength(const char *text)
@@ -132,7 +235,7 @@ static void modmenuOptionLine(char *line, int option)
 {
     int index = 0;
     modmenuAppendText(line, &index, modmenuSelected == option ? "> " : "  ");
-    modmenuAppendText(line, &index, modmenuOptionLabels[option]);
+    modmenuAppendText(line, &index, modmenuOptions[option].label);
 }
 
 static int modmenuFontWindowBegin(void)
@@ -284,63 +387,165 @@ static u64 modmenuUiTitleDraw(UiElementText_t *element)
 
 static u64 modmenuUiFooterDraw(UiElementFooter_t *element)
 {
-    u64 result;
+    ModFontSetFn fontSet;
+    ModFontPrintWindowFn fontPrintWindow;
+    ModFontWindow_t window;
+    int font;
+    int rowHeight;
+    int i;
 
     modmenuFooterDrawHits++;
+    if (!element) {
+        return 0;
+    }
+
     if ((UI_FRAME_COUNTER & 0x1f) == 1) {
-        printf("\nmod-menu footer stock pDraw elem=%08x win=%d,%d pos=%d,%d mode=%08x entries=%08x sel=%d",
+        printf("\nmod-menu footer custom pDraw elem=%08x win=%d,%d pos=%d,%d labels=%s/%s",
             (u32)element,
-            element ? element->base.windowW : -1,
-            element ? element->base.windowH : -1,
-            element ? element->base.screenX : -1,
-            element ? element->base.screenY : -1,
-            element ? element->modeFlags : 0,
-            element ? (u32)element->pEntries : 0,
-            element ? element->selectedIndex : -1);
-        if (element && element->pEntries) {
-            printf(" first=%04x,%04x second=%04x,%04x",
-                element->pEntries[0].labelStringId.id,
-                element->pEntries[0].labelStringId.flags,
-                element->pEntries[1].labelStringId.id,
-                element->pEntries[1].labelStringId.flags);
-        }
+            element->base.windowW,
+            element->base.windowH,
+            element->base.screenX,
+            element->base.screenY,
+            modmenuFooterLabels[0],
+            modmenuFooterLabels[1]);
     }
-    {
-        ModUiListDrawFn fn = (ModUiListDrawFn)GetAddressImmediate(&vaUiElementSelect_DrawList);
-        result = fn ? fn((UiElementList_t *)element) : 0;
+
+    fontSet = (ModFontSetFn)GetAddressImmediate(&vaFontSet);
+    fontPrintWindow = (ModFontPrintWindowFn)GetAddressImmediate(&vaFontPrintWindow);
+    if (!fontSet || !fontPrintWindow || !modmenuUiFontWindowBegin()) {
+        return 0;
     }
-    if ((UI_FRAME_COUNTER & 0x1f) == 1) {
-        printf(" ret=%08x", (u32)result);
+
+    font = fontSet(3);
+    rowHeight = element->base.windowH / 2;
+    if (rowHeight < 1) {
+        rowHeight = element->base.windowH;
     }
-    return result;
+
+    window.clipLeft = 1;
+    window.clipRight = (s16)(element->base.windowW - 4);
+    window.x = (s16)(element->base.windowW / 2);
+    window.pad0 = 0;
+    window.lineHeight = MOD_TITLE_FONT_LINE_HEIGHT;
+    window.flags = 0x000b;
+    window.pad1 = 0;
+    window.scrollOffset = 0;
+
+    for (i = 0; i < 2; i++) {
+        window.clipTop = (s16)(i * rowHeight);
+        window.clipBottom = (s16)((i + 1) * rowHeight);
+        window.y = (s16)((window.clipTop + window.clipBottom) / 2);
+        fontPrintWindow(&window, MOD_COLOR_SHADOW, modmenuFooterLabels[i], -1, font, (void *)0x001c3d10);
+        window.y = (s16)(window.y - 1);
+        fontPrintWindow(&window, TitleColor, modmenuFooterLabels[i], -1, font, (void *)0x001c3d10);
+    }
+
+    modmenuFontWindowEnd();
+    return UI_DRAW_RESULT_EXACT_SIZE;
 }
 
 static u64 modmenuUiListDraw(UiElementList_t *element)
 {
-    u64 result;
+    ModFontSetFn fontSet;
+    ModFontPrintWindowFn fontPrintWindow;
+    ModFontWindow_t window;
+    int font;
+    int rowHeight;
+    int listTop;
+    int i;
 
     modmenuListDrawHits++;
+    if (!element) {
+        return 0;
+    }
+
+    fontSet = (ModFontSetFn)GetAddressImmediate(&vaFontSet);
+    fontPrintWindow = (ModFontPrintWindowFn)GetAddressImmediate(&vaFontPrintWindow);
+    if (!fontSet || !fontPrintWindow || !modmenuUiFontWindowBegin()) {
+        return 0;
+    }
+
+    font = fontSet(1);
+    rowHeight = element->base.windowH / (MOD_OPTION_COUNT + 1);
+    if (rowHeight < 1) {
+        rowHeight = element->base.windowH;
+    }
+    listTop = (element->base.windowH - (rowHeight * MOD_OPTION_COUNT)) / 2;
+    if (listTop < 0) {
+        listTop = 0;
+    }
+
     if ((UI_FRAME_COUNTER & 0x1f) == 1) {
-        printf("\nmod-menu list stock pDraw elem=%08x win=%d,%d pos=%d,%d mode=%08x entries=%08x sel=%d first=%04x,%04x",
+        printf("\nmod-menu list custom pDraw elem=%08x win=%d,%d pos=%d,%d sel=%d row=%d top=%d",
             (u32)element,
-            element ? element->base.windowW : -1,
-            element ? element->base.windowH : -1,
-            element ? element->base.screenX : -1,
-            element ? element->base.screenY : -1,
-            element ? element->modeFlags : 0,
-            element ? (u32)element->pEntries : 0,
-            element ? element->selectedIndex : -1,
-            element && element->pEntries ? element->pEntries[0].labelStringId.id : 0,
-            element && element->pEntries ? element->pEntries[0].labelStringId.flags : 0);
+            element->base.windowW,
+            element->base.windowH,
+            element->base.screenX,
+            element->base.screenY,
+            modmenuSelected,
+            rowHeight,
+            listTop);
     }
-    {
-        ModUiListDrawFn fn = (ModUiListDrawFn)GetAddressImmediate(&vaUiElementSelect_DrawList);
-        result = fn ? fn(element) : 0;
+
+    window.clipLeft = 1;
+    window.clipRight = (s16)(element->base.windowW - 4);
+    window.x = (s16)(element->base.windowW / 2);
+    window.pad0 = 0;
+    window.lineHeight = 0x0c;
+    window.flags = 0x000b;
+    window.pad1 = 0;
+    window.scrollOffset = 0;
+
+    for (i = 0; i < MOD_OPTION_COUNT; i++) {
+        const char *label = modmenuOptions[i].label;
+        u32 color = (i == modmenuSelected) ? SelectedColor : NotSelectedColor;
+        window.clipTop = (s16)(listTop + (i * rowHeight));
+        window.clipBottom = (s16)(listTop + ((i + 1) * rowHeight));
+        window.y = (s16)((window.clipTop + window.clipBottom) / 2);
+        fontPrintWindow(&window, MOD_COLOR_SHADOW, label, -1, font, (void *)0x001c35d0);
+        window.y = (s16)(window.y - 1);
+        fontPrintWindow(&window, color, label, -1, font, (void *)0x001c35d0);
     }
-    if ((UI_FRAME_COUNTER & 0x1f) == 1) {
-        printf(" ret=%08x", (u32)result);
+
+    modmenuFontWindowEnd();
+    return UI_DRAW_RESULT_EXACT_SIZE;
+}
+static void modmenuSyncSelection(UiElementList_t *element)
+{
+    if (modmenuSelected < 0) {
+        modmenuSelected = MOD_OPTION_COUNT - 1;
     }
-    return result;
+    if (modmenuSelected >= MOD_OPTION_COUNT) {
+        modmenuSelected = 0;
+    }
+    if (element) {
+        element->selectedIndex = modmenuSelected;
+    }
+}
+
+static void modmenuMoveSelection(UiElementList_t *element, int delta)
+{
+    modmenuSelected += delta;
+    modmenuSyncSelection(element);
+}
+
+static int modmenuChooseSelection(void)
+{
+    UiMenu_t *nextMenu;
+
+    modmenuSelected = modmenuList.selectedIndex;
+    modmenuSyncSelection(&modmenuList);
+    if (modmenuSelected < 0 || modmenuSelected >= MOD_OPTION_COUNT) {
+        return 0;
+    }
+
+    nextMenu = modmenuOptions[modmenuSelected].pNextMenu;
+    if (!nextMenu) {
+        return 0;
+    }
+
+    UI_CHANGE_TO_POINTER = nextMenu;
+    return 1;
 }
 static void modmenuReturnToPauseMenu(void)
 {
@@ -349,58 +554,50 @@ static void modmenuReturnToPauseMenu(void)
     }
 }
 
-static void modmenuUiFrameUpdate(UiElementBase_t *element)
+static u64 modmenuUiFrameUpdate(UiElementBase_t *element)
 {
-    int raw = modmenuRawButtons();
+    (void)element;
 
-    if (modmenuRawPressed(raw, PAD_TRIANGLE | PAD_CIRCLE)) {
+    if (modmenuHudPressed(P1_PAD->hudBitsOn, PAD_REVERSED_TRIANGLE)) {
         modmenuReturnToPauseMenu();
-        modmenuLastRawButtons = raw;
-        return;
     }
 
-    modmenuLastRawButtons = raw;
-    uiVTableHandleExit(element);
+    if (modmenuHudPressed(P1_PAD->hudBitsOn, PAD_REVERSED_START)) {
+        return 1;
+    }
+
+    return 0;
 }
 
 static u64 modmenuUiUpdate(UiElementList_t *element)
 {
-    int raw = modmenuRawButtons();
+    (void)element;
 
     modmenuListUpdateHits++;
-
-    if (modmenuRawPressed(raw, PAD_START | PAD_R3 | PAD_SELECT)) {
-        modmenuLastRawButtons = raw;
+    if (P1_PAD->hudBitsOn & PAD_REVERSED_START) {
         return 1;
     }
-    if (modmenuRawPressed(raw, PAD_TRIANGLE | PAD_CIRCLE)) {
-        modmenuReturnToPauseMenu();
-        modmenuLastRawButtons = raw;
-        return 0;
-    }
-    if (modmenuRawPressed(raw, PAD_UP)) {
-        modmenuSelected--;
-        if (modmenuSelected < 0) {
-            modmenuSelected = MOD_OPTION_COUNT - 1;
-        }
-    }
-    if (modmenuRawPressed(raw, PAD_DOWN)) {
-        modmenuSelected++;
-        if (modmenuSelected >= MOD_OPTION_COUNT) {
-            modmenuSelected = 0;
-        }
-    }
-    if (modmenuRawPressed(raw, PAD_CROSS)) {
-        modmenuOptionEnabled[modmenuSelected] = !modmenuOptionEnabled[modmenuSelected];
-    }
 
-    if (element) {
-        element->selectedIndex = modmenuSelected;
-    }
-    modmenuLastRawButtons = raw;
     return 0;
 }
 
+static void modmenuPollActiveInput(void)
+{
+    int pressed = P1_PAD->hudBitsOn;
+
+    if (pressed & PAD_REVERSED_TRIANGLE) {
+        modmenuReturnToPauseMenu();
+    }
+    else if (pressed & PAD_REVERSED_UP) {
+        modmenuMoveSelection(&modmenuList, -1);
+    }
+    else if (pressed & PAD_REVERSED_DOWN) {
+        modmenuMoveSelection(&modmenuList, 1);
+    }
+    else if (pressed & PAD_REVERSED_CROSS) {
+        modmenuChooseSelection();
+    }
+}
 static void modmenuSetProbeFrame(M1138_MenuItem_Pvar_t *frame, float x, float y, float w, float h)
 {
     if (!frame) {
@@ -452,7 +649,11 @@ static void modmenuSetActiveFrameState(void)
     uiMenuSetElement(&modmenuMenu, 0, (UiElementBase_t *)&modmenuTitle);
     uiMenuSetElement(&modmenuMenu, 3, (UiElementBase_t *)&modmenuList);
     uiMenuSetElement(&modmenuMenu, 4, (UiElementBase_t *)&modmenuFooter);
+    modmenuSyncSelection(&modmenuList);
     modmenuMenu.pSelectedElement = (UiElementBase_t *)&modmenuList;
+    modmenuTitle.base.pUpdate = (void *)modmenuUiFrameUpdate;
+    modmenuList.base.pUpdate = (void *)modmenuUiUpdate;
+    modmenuFooter.base.pUpdate = 0;
     modmenuTitle.base.pDraw = (void *)modmenuUiTitleDraw;
     modmenuList.base.pDraw = (void *)modmenuUiListDraw;
     modmenuFooter.base.pDraw = (void *)modmenuUiFooterDraw;
@@ -484,7 +685,7 @@ static void modmenuCreateTitle(void)
 
     modmenuRectVectors(tl, tr, bl, br, 275.0f, 28.0f, 260.0f, 20.0f);
     uiCreateTitle(&modmenuTitle, &modmenuTitleFrame, tl, tr, bl, br, 0x4f5e);
-    modmenuTitle.base.pUpdate = (void *)uiVTableHandleExit;
+    modmenuTitle.base.pUpdate = (void *)modmenuUiFrameUpdate;
     modmenuTitle.base.pInit = (void *)uiVTableUseResourceTableOff;
     modmenuTitle.base.pDraw = (void *)modmenuUiTitleDraw;
     modmenuTitle.base.renderFlags = 0;
@@ -497,28 +698,19 @@ static void modmenuCreateList(void)
     VECTOR bl;
     VECTOR br;
     int i;
-
-    int ids[MOD_OPTION_COUNT] = { 0x4fd5, 0x4ef1, 0x4ef2, 0x4ee2, 0x4ee3 };
-    UiMenu_t *nextMenus[MOD_OPTION_COUNT] = {
-        (UiMenu_t *)0x001b40e0,
-        (UiMenu_t *)0x001b4980,
-        (UiMenu_t *)0x001b4ac8,
-        (UiMenu_t *)0x001b51a0,
-        (UiMenu_t *)0x001b5528
-    };
-
     for (i = 0; i < MOD_OPTION_COUNT; i++) {
-        modmenuEntries[i].labelStringId.flags = 3;
-        modmenuEntries[i].labelStringId.id = ids[i];
-        modmenuEntries[i].pNextMenu = nextMenus[i];
+        modmenuEntries[i].labelStringId.flags = 0;
+        modmenuEntries[i].labelStringId.id = 0;
+        modmenuEntries[i].pNextMenu = modmenuOptions[i].pNextMenu;
         modmenuEntries[i].timeSelected = 0;
     }
-    modmenuEntries[MOD_OPTION_COUNT].labelStringId.flags = 0;
-    modmenuEntries[MOD_OPTION_COUNT].labelStringId.id = 0;
-    modmenuEntries[MOD_OPTION_COUNT].pNextMenu = 0;
-    modmenuEntries[MOD_OPTION_COUNT].timeSelected = 0;
+    modmenuEntries[MOD_OPTION_ENTRY_COUNT - 1].labelStringId.flags = 0;
+    modmenuEntries[MOD_OPTION_ENTRY_COUNT - 1].labelStringId.id = 0;
+    modmenuEntries[MOD_OPTION_ENTRY_COUNT - 1].pNextMenu = 0;
+    modmenuEntries[MOD_OPTION_ENTRY_COUNT - 1].timeSelected = 0;
 
     modmenuRectVectors(tl, tr, bl, br, 300.0f, 56.0f, 210.0f, 96.0f);
+    modmenuSyncSelection(&modmenuList);
     uiCreateSelectList(&modmenuList, &modmenuListFrame, tl, tr, bl, br, 0x1000, modmenuEntries, 0, 0, modmenuSelected);
     modmenuList.base.pUpdate = (void *)modmenuUiUpdate;
     modmenuList.base.pDraw = (void *)modmenuUiListDraw;
@@ -539,10 +731,6 @@ static void modmenuCreateFooter(void)
         modmenuFooterEntries[i].pNextMenu = 0;
         modmenuFooterEntries[i].timeSelected = 0;
     }
-
-    modmenuFooterEntries[0].labelStringId.id = 0x4edf;
-    modmenuFooterEntries[1].labelStringId.id = 0x4ee0;
-
     modmenuRectVectors(tl, tr, bl, br, 300.0f, 160.0f, 210.0f, 24.0f);
     uiCreateFooter(&modmenuFooter, &modmenuFooterFrame, tl, tr, bl, br, 0x4002, modmenuFooterEntries, 0, 0, 0);
     modmenuFooter.base.pUpdate = 0;
@@ -565,6 +753,12 @@ static void modmenuPrepareCustomMenu(UiMenu_t *parent)
     uiMenuSetElement(&modmenuMenu, 0, (UiElementBase_t *)&modmenuTitle);
     uiMenuSetElement(&modmenuMenu, 3, (UiElementBase_t *)&modmenuList);
     uiMenuSetElement(&modmenuMenu, 4, (UiElementBase_t *)&modmenuFooter);
+    modmenuSyncSelection(&modmenuList);
+    modmenuLastRawButtons = modmenuRawButtons();
+    modmenuLastPressureButtons = modmenuPressureButtons();
+    modmenuLastHudButtons = P1_PAD->hudBitsOn;
+    modmenuDpadRepeatTimer = 0;
+    modmenuLastDirection = 0;
     modmenuMenu.pSelectedElement = (UiElementBase_t *)&modmenuList;
 }
 
@@ -599,6 +793,10 @@ static void modmenuEnsureState(void)
     modmenuStateMagic = MOD_STATE_MAGIC;
     modmenuSelected = 0;
     modmenuLastRawButtons = modmenuRawButtons();
+    modmenuLastPressureButtons = modmenuPressureButtons();
+    modmenuLastHudButtons = P1_PAD->hudBitsOn;
+    modmenuDpadRepeatTimer = 0;
+    modmenuLastDirection = 0;
     modmenuOriginalHelpMenu = MOD_PTR_UNSET;
     uiMenuInit(&modmenuMenu, 0, MOD_MENU_ID);
     for (i = 0; i < MOD_OPTION_COUNT; i++) {
@@ -621,6 +819,7 @@ static void modmenuDraw(void)
     modmenuPatchHelpEntry();
 
     if (modmenuIsActiveMenu()) {
+        modmenuPollActiveInput();
         modmenuSetActiveFrameState();
         return;
     }

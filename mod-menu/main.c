@@ -49,8 +49,8 @@ typedef struct ModMenuOption {
 } ModMenuOption_t;
 
 static u32 TitleColor = 0x80ffa888;
-static u32 SelectedColor = 0x80ffa888;
-static u32 NotSelectedColor = 0x80b0b0b0;
+static u32 SelectedColor = 0x8000ffff;
+static u32 NotSelectedColor = 0x80ffb080;
 
 static int modmenuStateMagic;
 static int modmenuSelected;
@@ -263,20 +263,21 @@ static void modmenuAppendText(char *line, int *index, const char *text)
     line[*index] = 0;
 }
 
-static void modmenuOptionLine(char *line, int option)
+static void modmenuOptionLine(char *line, int option, int selected)
 {
     int index = 0;
-    modmenuAppendText(line, &index, modmenuSelected == option ? "> " : "  ");
+
+    (void)selected;
     modmenuAppendText(line, &index, modmenuOptions[option].label);
 }
 
-static const char *modmenuOptionDrawLabel(int option)
+static const char *modmenuOptionDrawLabel(int option, int selected)
 {
     if (option < 0 || option >= MOD_OPTION_COUNT) {
         return "";
     }
 
-    modmenuOptionLine(modmenuListLabels[option], option);
+    modmenuOptionLine(modmenuListLabels[option], option, selected);
     return modmenuListLabels[option];
 }
 
@@ -545,12 +546,14 @@ static u64 modmenuUiListDraw(UiElementList_t *element)
     window.scrollOffset = 0;
 
     for (i = 0; i < MOD_OPTION_COUNT; i++) {
-        const char *label = modmenuOptionDrawLabel(i);
-        u32 color = (i == modmenuSelected) ? SelectedColor : NotSelectedColor;
+        int selected = (i == modmenuSelected);
+        const char *shadowLabel = modmenuOptions[i].label;
+        const char *label = modmenuOptionDrawLabel(i, selected);
+        u32 color = selected ? SelectedColor : NotSelectedColor;
         window.clipTop = (s16)(listTop + (i * rowHeight));
         window.clipBottom = (s16)(listTop + ((i + 1) * rowHeight));
         window.y = (s16)((window.clipTop + window.clipBottom) / 2);
-        fontPrintWindow(&window, MOD_COLOR_SHADOW, label, -1, font, (void *)0x001c35d0);
+        fontPrintWindow(&window, MOD_COLOR_SHADOW, shadowLabel, -1, font, (void *)0x001c35d0);
         window.y = (s16)(window.y - 1);
         fontPrintWindow(&window, color, label, -1, font, (void *)0x001c35d0);
     }
@@ -571,10 +574,27 @@ static void modmenuSyncSelection(UiElementList_t *element)
     }
 }
 
+static void modmenuPlayMoveSound(UiElementList_t *element)
+{
+    Moby *sourceMoby = element ? element->base.pMoby : modmenuList.base.pMoby;
+
+    if (!sourceMoby) {
+        sourceMoby = uiMenuGetFrameMoby(3);
+    }
+    if (sourceMoby) {
+        mobyPlaySoundByIndex(1, 0x11, sourceMoby);
+    }
+}
+
 static void modmenuMoveSelection(UiElementList_t *element, int delta)
 {
+    int previous = modmenuSelected;
+
     modmenuSelected += delta;
     modmenuSyncSelection(element);
+    if (modmenuSelected != previous) {
+        modmenuPlayMoveSound(element);
+    }
 }
 
 static int modmenuChooseSelection(void)

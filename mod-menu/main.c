@@ -86,7 +86,10 @@ static ModMenuOption_t modmenuOptions[] = {
     { "Submenu 6", 0 },
 };
 #define MOD_OPTION_COUNT ((int)MOD_ARRAY_COUNT(modmenuOptions))
-#define MOD_SUBMENU_OPTION_COUNT 4
+#define MOD_SUBMENU_DEFAULT_OPTION_COUNT 4
+#define MOD_SUBMENU_MAX_OPTION_COUNT 12
+#define MOD_SUBMENU_MIN_ROW_HEIGHT 34
+#define MOD_SUBMENU_ROW_BG_PADDING 4
 #define MOD_OPTION_TERMINATOR_COUNT 1
 
 static UiOptionEntry_t modmenuEntries[MOD_ARRAY_COUNT(modmenuOptions) + MOD_OPTION_TERMINATOR_COUNT];
@@ -106,8 +109,9 @@ static M1138_MenuItem_Pvar_t modmenuSubmenuTitleFrames[MOD_ARRAY_COUNT(modmenuOp
 static M1138_MenuItem_Pvar_t modmenuSubmenuBodyFrames[MOD_ARRAY_COUNT(modmenuOptions)];
 static M1138_MenuItem_Pvar_t modmenuSubmenuFooterFrames[MOD_ARRAY_COUNT(modmenuOptions)];
 static int modmenuSubmenuSelected[MOD_ARRAY_COUNT(modmenuOptions)];
-static int modmenuSubmenuValues[MOD_ARRAY_COUNT(modmenuOptions)][MOD_SUBMENU_OPTION_COUNT];
+static int modmenuSubmenuValues[MOD_ARRAY_COUNT(modmenuOptions)][MOD_SUBMENU_MAX_OPTION_COUNT];
 static char modmenuListLabels[MOD_ARRAY_COUNT(modmenuOptions)][64];
+static char modmenuSubmenuOptionLabels[MOD_SUBMENU_MAX_OPTION_COUNT][64];
 static int modmenuForceCustomMenuFrames;
 
 static const int modmenuHelpTopicAnimIds[][UI_MENU_MAX_ELEMENTS] = {
@@ -261,6 +265,34 @@ static void modmenuAppendText(char *line, int *index, const char *text)
         line[*index] = text[i];
         (*index)++;
         i++;
+    }
+    line[*index] = 0;
+}
+
+static void modmenuAppendInt(char *line, int *index, int value)
+{
+    char digits[10];
+    int count = 0;
+
+    if (value <= 0) {
+        if (*index < 63) {
+            line[*index] = '0';
+            (*index)++;
+            line[*index] = 0;
+        }
+        return;
+    }
+
+    while (value > 0 && count < (int)sizeof(digits)) {
+        digits[count] = (char)('0' + (value % 10));
+        value /= 10;
+        count++;
+    }
+
+    while (count > 0 && *index < 63) {
+        count--;
+        line[*index] = digits[count];
+        (*index)++;
     }
     line[*index] = 0;
 }
@@ -722,15 +754,29 @@ static void modmenuPlaySubmenuSound(UiElementBase_t *element, int soundIndex)
     }
 }
 
+static int modmenuSubmenuOptionCount(int submenuIndex)
+{
+    if (submenuIndex == 0) {
+        return MOD_SUBMENU_MAX_OPTION_COUNT;
+    }
+    return MOD_SUBMENU_DEFAULT_OPTION_COUNT;
+}
 static void modmenuSyncSubmenuSelection(int submenuIndex)
 {
+    int optionCount;
+
     if (submenuIndex < 0 || submenuIndex >= MOD_OPTION_COUNT) {
         return;
     }
-    if (modmenuSubmenuSelected[submenuIndex] < 0) {
-        modmenuSubmenuSelected[submenuIndex] = MOD_SUBMENU_OPTION_COUNT - 1;
+
+    optionCount = modmenuSubmenuOptionCount(submenuIndex);
+    if (optionCount < 1) {
+        optionCount = 1;
     }
-    if (modmenuSubmenuSelected[submenuIndex] >= MOD_SUBMENU_OPTION_COUNT) {
+    if (modmenuSubmenuSelected[submenuIndex] < 0) {
+        modmenuSubmenuSelected[submenuIndex] = optionCount - 1;
+    }
+    if (modmenuSubmenuSelected[submenuIndex] >= optionCount) {
         modmenuSubmenuSelected[submenuIndex] = 0;
     }
 }
@@ -767,22 +813,22 @@ static void modmenuToggleSubmenuOption(UiElementBase_t *element, int submenuInde
 
 static const char *modmenuSubmenuOptionLabel(int option)
 {
-    static const char *labels[MOD_SUBMENU_OPTION_COUNT] = {
-        "Option 1",
-        "Option 2",
-        "Option 3",
-        "Option 4"
-    };
+    char *label;
+    int index = 0;
 
-    if (option < 0 || option >= MOD_SUBMENU_OPTION_COUNT) {
+    if (option < 0 || option >= MOD_SUBMENU_MAX_OPTION_COUNT) {
         return "";
     }
-    return labels[option];
+
+    label = modmenuSubmenuOptionLabels[option];
+    modmenuAppendText(label, &index, "Option ");
+    modmenuAppendInt(label, &index, option + 1);
+    return label;
 }
 
 static const char *modmenuSubmenuValueLabel(int submenuIndex, int option)
 {
-    if (submenuIndex < 0 || submenuIndex >= MOD_OPTION_COUNT || option < 0 || option >= MOD_SUBMENU_OPTION_COUNT) {
+    if (submenuIndex < 0 || submenuIndex >= MOD_OPTION_COUNT || option < 0 || option >= modmenuSubmenuOptionCount(submenuIndex)) {
         return "";
     }
     return modmenuSubmenuValues[submenuIndex][option] ? "ON" : "OFF";
@@ -884,7 +930,16 @@ static u64 modmenuSubmenuBodyDraw(UiElementText_t *element)
     int listTop;
     int valueLeft;
     int valueRight;
-    int i;
+    int optionCount;
+    int comfortableCount;
+    int visibleCount;
+    int firstOption;
+    int rowTop;
+    int rowBottom;
+    int rowClipTop;
+    int rowClipBottom;
+    int drawRow;
+    int option;
 
     if (!element) {
         return 0;
@@ -903,11 +958,36 @@ static u64 modmenuSubmenuBodyDraw(UiElementText_t *element)
     }
 
     font = fontSet(1);
-    rowHeight = element->base.windowH / (MOD_SUBMENU_OPTION_COUNT + 1);
+    optionCount = modmenuSubmenuOptionCount(index);
+    if (optionCount < 1) {
+        optionCount = 1;
+    }
+
+    comfortableCount = element->base.windowH / MOD_SUBMENU_MIN_ROW_HEIGHT;
+    if (comfortableCount < 1) {
+        comfortableCount = 1;
+    }
+
+    visibleCount = optionCount;
+    firstOption = 0;
+    if (visibleCount > comfortableCount) {
+        visibleCount = comfortableCount;
+        rowHeight = MOD_SUBMENU_MIN_ROW_HEIGHT;
+        firstOption = modmenuSubmenuSelected[index] - (visibleCount / 2);
+        if (firstOption < 0) {
+            firstOption = 0;
+        }
+        if (firstOption > optionCount - visibleCount) {
+            firstOption = optionCount - visibleCount;
+        }
+    }
+    else {
+        rowHeight = element->base.windowH / (visibleCount + 1);
+    }
     if (rowHeight < 1) {
         rowHeight = element->base.windowH;
     }
-    listTop = (element->base.windowH - (rowHeight * MOD_SUBMENU_OPTION_COUNT)) / 2;
+    listTop = (element->base.windowH - (rowHeight * visibleCount)) / 2;
     if (listTop < 0) {
         listTop = 0;
     }
@@ -922,14 +1002,28 @@ static u64 modmenuSubmenuBodyDraw(UiElementText_t *element)
     window.pad1 = 0;
     window.scrollOffset = 0;
 
-    for (i = 0; i < MOD_SUBMENU_OPTION_COUNT; i++) {
-        const char *label = modmenuSubmenuOptionLabel(i);
-        const char *value = modmenuSubmenuValueLabel(index, i);
-        u32 color = (i == modmenuSubmenuSelected[index]) ? SelectedColor : NotSelectedColor;
+    for (drawRow = 0; drawRow < visibleCount; drawRow++) {
+        const char *label;
+        const char *value;
+        u32 color;
 
-        window.clipTop = (s16)(listTop + (i * rowHeight));
-        window.clipBottom = (s16)(listTop + ((i + 1) * rowHeight));
-        window.y = (s16)((window.clipTop + window.clipBottom) / 2);
+        option = firstOption + drawRow;
+        label = modmenuSubmenuOptionLabel(option);
+        value = modmenuSubmenuValueLabel(index, option);
+        color = (option == modmenuSubmenuSelected[index]) ? SelectedColor : NotSelectedColor;
+
+        rowTop = listTop + (drawRow * rowHeight);
+        rowBottom = listTop + ((drawRow + 1) * rowHeight);
+        rowClipTop = rowTop + MOD_SUBMENU_ROW_BG_PADDING;
+        rowClipBottom = rowBottom - MOD_SUBMENU_ROW_BG_PADDING;
+        if (rowClipBottom <= rowClipTop) {
+            rowClipTop = rowTop;
+            rowClipBottom = rowBottom;
+        }
+
+        window.clipTop = (s16)rowClipTop;
+        window.clipBottom = (s16)rowClipBottom;
+        window.y = (s16)((rowClipTop + rowClipBottom) / 2);
 
         window.clipLeft = 8;
         window.clipRight = (s16)(valueLeft - 2);

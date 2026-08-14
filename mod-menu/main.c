@@ -108,6 +108,13 @@ static M1138_MenuItem_Pvar_t modmenuSubmenuFooterFrames[MOD_ARRAY_COUNT(modmenuO
 static char modmenuListLabels[MOD_ARRAY_COUNT(modmenuOptions)][64];
 static int modmenuForceCustomMenuFrames;
 
+static const int modmenuHelpTopicAnimIds[][UI_MENU_MAX_ELEMENTS] = {
+    { 185, 186, 187, 188, 189, 5, 6, 7, 8, 9, 10, 11, 12, 13 },
+    { 57, 58, 59, 60, 61, 5, 6, 7, 8, 9, 10, 11, 12, 13 },
+    { 62, 63, 64, 65, 66, 5, 6, 7, 8, 9, 10, 11, 12, 13 },
+};
+#define MOD_HELP_TOPIC_ANIM_SET_COUNT ((int)MOD_ARRAY_COUNT(modmenuHelpTopicAnimIds))
+
 static void modmenuSetVector(VECTOR output, float x, float y, float z)
 {
     output[0] = x;
@@ -122,6 +129,19 @@ static void modmenuRectVectors(VECTOR tl, VECTOR tr, VECTOR bl, VECTOR br, float
     modmenuSetVector(tr, x + w, y, 0.0f);
     modmenuSetVector(bl, x, y + h, 0.0f);
     modmenuSetVector(br, x + w, y + h, 0.0f);
+}
+
+static void modmenuCopyAnimIds(UiMenu_t *menu, const int *animIds)
+{
+    int i;
+
+    if (!menu || !animIds) {
+        return;
+    }
+
+    for (i = 0; i < UI_MENU_MAX_ELEMENTS; i++) {
+        menu->mobyAnimIds[i] = animIds[i];
+    }
 }
 
 static void modmenuMoveSelection(UiElementList_t *element, int delta);
@@ -831,7 +851,7 @@ static void modmenuCreateSubmenus(void)
 
     for (i = 0; i < MOD_OPTION_COUNT; i++) {
         uiMenuInit(&modmenuSubmenus[i], &modmenuMenu, MOD_MENU_ID + 1 + i);
-        uiMenuCopyFrameAnims(&modmenuSubmenus[i], MOD_STOCK_HELP_MENU);
+        modmenuCopyAnimIds(&modmenuSubmenus[i], modmenuHelpTopicAnimIds[i % MOD_HELP_TOPIC_ANIM_SET_COUNT]);
 
         modmenuRectVectors(tl, tr, bl, br, 275.0f, 28.0f, 260.0f, 20.0f);
         uiCreateTitle(&modmenuSubmenuTitles[i], &modmenuSubmenuTitleFrames[i], tl, tr, bl, br, 0x4f5e);

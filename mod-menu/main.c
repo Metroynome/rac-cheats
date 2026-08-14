@@ -48,6 +48,23 @@ typedef struct ModMenuOption {
     UiMenu_t *pNextMenu;
 } ModMenuOption_t;
 
+typedef enum ModMenuSettingType {
+    MOD_SETTING_TOGGLE,
+    MOD_SETTING_TOGGLE_INVERTED,
+    MOD_SETTING_LIST,
+    MOD_SETTING_NUMBER
+} ModMenuSettingType_t;
+
+typedef struct ModMenuSetting {
+    const char *label;
+    ModMenuSettingType_t type;
+    const char **choices;
+    int choiceCount;
+    int minValue;
+    int maxValue;
+    const char *description;
+} ModMenuSetting_t;
+
 static u32 TitleColor = 0x80ffa888;
 static u32 SelectedColor = 0x8000ffff;
 static u32 NotSelectedColor = 0x80ffb080;
@@ -106,15 +123,33 @@ static UiMenu_t modmenuSubmenus[MOD_ARRAY_COUNT(modmenuOptions)];
 static UiElementText_t modmenuSubmenuTitles[MOD_ARRAY_COUNT(modmenuOptions)];
 static UiElementText_t modmenuSubmenuBodies[MOD_ARRAY_COUNT(modmenuOptions)];
 static UiElementText_t modmenuSubmenuFooters[MOD_ARRAY_COUNT(modmenuOptions)];
+static UiElementText_t modmenuSubmenuDescriptions[MOD_ARRAY_COUNT(modmenuOptions)];
 static M1138_MenuItem_Pvar_t modmenuSubmenuTitleFrames[MOD_ARRAY_COUNT(modmenuOptions)];
 static M1138_MenuItem_Pvar_t modmenuSubmenuBodyFrames[MOD_ARRAY_COUNT(modmenuOptions)];
 static M1138_MenuItem_Pvar_t modmenuSubmenuFooterFrames[MOD_ARRAY_COUNT(modmenuOptions)];
+static M1138_MenuItem_Pvar_t modmenuSubmenuDescriptionFrames[MOD_ARRAY_COUNT(modmenuOptions)];
 static int modmenuSubmenuSelected[MOD_ARRAY_COUNT(modmenuOptions)];
 static int modmenuSubmenuValues[MOD_ARRAY_COUNT(modmenuOptions)][MOD_SUBMENU_MAX_OPTION_COUNT];
 static char modmenuListLabels[MOD_ARRAY_COUNT(modmenuOptions)][64];
-static char modmenuSubmenuOptionLabels[MOD_SUBMENU_MAX_OPTION_COUNT][64];
+static char modmenuSubmenuValueLabels[MOD_SUBMENU_MAX_OPTION_COUNT][32];
 static int modmenuForceCustomMenuFrames;
 
+static const char *modmenuSettingSpeedChoices[] = { "Slow", "Normal", "Fast" };
+static const char *modmenuSettingModeChoices[] = { "Off", "Low", "High", "Max" };
+static const ModMenuSetting_t modmenuSubmenuSettings[MOD_SUBMENU_MAX_OPTION_COUNT] = {
+    { "Infinite Health", MOD_SETTING_TOGGLE, 0, 0, 0, 0, "Prevents Ratchet from losing health while this option is enabled." },
+    { "Disable Damage", MOD_SETTING_TOGGLE_INVERTED, 0, 0, 0, 0, "Inverted toggle example. ON stores zero, OFF stores one." },
+    { "Movement Speed", MOD_SETTING_LIST, modmenuSettingSpeedChoices, (int)MOD_ARRAY_COUNT(modmenuSettingSpeedChoices), 0, 0, "Cycles between several named speed presets." },
+    { "Bolt Multiplier", MOD_SETTING_NUMBER, 0, 0, 1, 9, "Cycles a numeric multiplier value without drawing a range bar." },
+    { "Moon Jump", MOD_SETTING_TOGGLE, 0, 0, 0, 0, "Example boolean option for testing longer submenu lists." },
+    { "Unlock Weapons", MOD_SETTING_TOGGLE, 0, 0, 0, 0, "Example boolean option for testing longer submenu lists." },
+    { "Quick Select Mode", MOD_SETTING_LIST, modmenuSettingModeChoices, (int)MOD_ARRAY_COUNT(modmenuSettingModeChoices), 0, 0, "Cycles through multiple named modes." },
+    { "Ammo Level", MOD_SETTING_NUMBER, 0, 0, 0, 10, "Cycles a number from zero to ten." },
+    { "Armor Upgrade", MOD_SETTING_TOGGLE, 0, 0, 0, 0, "Example boolean option for testing scrolling." },
+    { "Planet Flags", MOD_SETTING_LIST, modmenuSettingModeChoices, (int)MOD_ARRAY_COUNT(modmenuSettingModeChoices), 0, 0, "Another multi-choice placeholder setting." },
+    { "Debug Camera", MOD_SETTING_TOGGLE, 0, 0, 0, 0, "Example toggle used to keep Submenu 1 scrollable." },
+    { "Test Number", MOD_SETTING_NUMBER, 0, 0, 0, 5, "Small numeric cycle test option." },
+};
 static const int modmenuHelpTopicAnimIds[][UI_MENU_MAX_ELEMENTS] = {
     { 185, 186, 187, 188, 189, 5, 6, 7, 8, 9, 10, 11, 12, 13 },
     { 57, 58, 59, 60, 61, 5, 6, 7, 8, 9, 10, 11, 12, 13 },
@@ -801,6 +836,8 @@ static void modmenuMoveSubmenuSelection(UiElementBase_t *element, int submenuInd
 static void modmenuToggleSubmenuOption(UiElementBase_t *element, int submenuIndex)
 {
     int option;
+    int value;
+    const ModMenuSetting_t *setting;
 
     if (submenuIndex < 0 || submenuIndex >= MOD_OPTION_COUNT) {
         return;
@@ -808,33 +845,84 @@ static void modmenuToggleSubmenuOption(UiElementBase_t *element, int submenuInde
 
     modmenuSyncSubmenuSelection(submenuIndex);
     option = modmenuSubmenuSelected[submenuIndex];
-    modmenuSubmenuValues[submenuIndex][option] ^= 1;
+    setting = &modmenuSubmenuSettings[option];
+    value = modmenuSubmenuValues[submenuIndex][option];
+
+    if (setting->type == MOD_SETTING_LIST) {
+        value++;
+        if (value >= setting->choiceCount) {
+            value = 0;
+        }
+    }
+    else if (setting->type == MOD_SETTING_NUMBER) {
+        value++;
+        if (value > setting->maxValue) {
+            value = setting->minValue;
+        }
+    }
+    else {
+        value ^= 1;
+    }
+
+    modmenuSubmenuValues[submenuIndex][option] = value;
     modmenuPlaySubmenuSound(element, 0);
 }
 
 static const char *modmenuSubmenuOptionLabel(int option)
 {
-    char *label;
-    int index = 0;
-
     if (option < 0 || option >= MOD_SUBMENU_MAX_OPTION_COUNT) {
         return "";
     }
-
-    label = modmenuSubmenuOptionLabels[option];
-    modmenuAppendText(label, &index, "Option ");
-    modmenuAppendInt(label, &index, option + 1);
-    return label;
+    return modmenuSubmenuSettings[option].label ? modmenuSubmenuSettings[option].label : "";
 }
 
 static const char *modmenuSubmenuValueLabel(int submenuIndex, int option)
 {
+    const ModMenuSetting_t *setting;
+    char *label;
+    int index = 0;
+    int value;
+
     if (submenuIndex < 0 || submenuIndex >= MOD_OPTION_COUNT || option < 0 || option >= modmenuSubmenuOptionCount(submenuIndex)) {
         return "";
     }
-    return modmenuSubmenuValues[submenuIndex][option] ? "ON" : "OFF";
+
+    setting = &modmenuSubmenuSettings[option];
+    value = modmenuSubmenuValues[submenuIndex][option];
+    if (setting->type == MOD_SETTING_TOGGLE_INVERTED) {
+        return value ? "OFF" : "ON";
+    }
+    if (setting->type == MOD_SETTING_TOGGLE) {
+        return value ? "ON" : "OFF";
+    }
+    if (setting->type == MOD_SETTING_LIST) {
+        if (value < 0 || value >= setting->choiceCount || !setting->choices) {
+            return "";
+        }
+        return setting->choices[value];
+    }
+
+    label = modmenuSubmenuValueLabels[option];
+    modmenuAppendInt(label, &index, value);
+    return label;
 }
 
+static const char *modmenuSubmenuDescription(int submenuIndex)
+{
+    int option;
+
+    if (submenuIndex < 0 || submenuIndex >= MOD_OPTION_COUNT) {
+        return "";
+    }
+
+    modmenuSyncSubmenuSelection(submenuIndex);
+    option = modmenuSubmenuSelected[submenuIndex];
+    if (option < 0 || option >= modmenuSubmenuOptionCount(submenuIndex)) {
+        return "";
+    }
+
+    return modmenuSubmenuSettings[option].description ? modmenuSubmenuSettings[option].description : "";
+}
 static int modmenuFindSubmenuIndex(UiElementBase_t *element)
 {
     int i;
@@ -842,7 +930,8 @@ static int modmenuFindSubmenuIndex(UiElementBase_t *element)
     for (i = 0; i < MOD_OPTION_COUNT; i++) {
         if (element == (UiElementBase_t *)&modmenuSubmenuTitles[i] ||
             element == (UiElementBase_t *)&modmenuSubmenuBodies[i] ||
-            element == (UiElementBase_t *)&modmenuSubmenuFooters[i]) {
+            element == (UiElementBase_t *)&modmenuSubmenuFooters[i] ||
+            element == (UiElementBase_t *)&modmenuSubmenuDescriptions[i]) {
             return i;
         }
     }
@@ -1048,6 +1137,45 @@ static u64 modmenuSubmenuBodyDraw(UiElementText_t *element)
     modmenuFontWindowEnd();
     return UI_DRAW_RESULT_EXACT_SIZE;
 }
+static u64 modmenuSubmenuDescriptionDraw(UiElementText_t *element)
+{
+    ModFontSetFn fontSet;
+    ModFontPrintWindowFn fontPrintWindow;
+    ModFontWindow_t window;
+    const char *description;
+    int index;
+    int font;
+
+    if (!element) {
+        return 0;
+    }
+
+    index = modmenuFindSubmenuIndex((UiElementBase_t *)element);
+    description = modmenuSubmenuDescription(index);
+    fontSet = (ModFontSetFn)GetAddressImmediate(&vaFontSet);
+    fontPrintWindow = (ModFontPrintWindowFn)GetAddressImmediate(&vaFontPrintWindow);
+    if (!fontSet || !fontPrintWindow || !modmenuUiFontWindowBegin()) {
+        return 0;
+    }
+
+    font = fontSet(1);
+    window.clipTop = 6;
+    window.clipBottom = (s16)(element->base.windowH - 6);
+    window.clipLeft = 8;
+    window.clipRight = (s16)(element->base.windowW - 6);
+    window.x = 10;
+    window.y = 8;
+    window.pad0 = 0;
+    window.lineHeight = 0x0c;
+    window.flags = 0x0000;
+    window.pad1 = 0;
+    window.scrollOffset = 0;
+    fontPrintWindow(&window, MOD_COLOR_SHADOW, description, -1, font, (void *)0x001c35d0);
+    window.y = (s16)(window.y - 1);
+    fontPrintWindow(&window, NotSelectedColor, description, -1, font, (void *)0x001c35d0);
+    modmenuFontWindowEnd();
+    return UI_DRAW_RESULT_EXACT_SIZE;
+}
 static u64 modmenuSubmenuFooterDraw(UiElementText_t *element)
 {
     ModFontSetFn fontSet;
@@ -1114,10 +1242,20 @@ static void modmenuCreateSubmenus(void)
         modmenuSubmenuFooters[i].base.pDraw = (void *)modmenuSubmenuFooterDraw;
         modmenuSubmenuFooters[i].base.renderFlags = 0;
 
+        modmenuRectVectors(tl, tr, bl, br, 20.0f, 343.0f, 167.0f, 70.0f);
+        uiCreateText(&modmenuSubmenuDescriptions[i], &modmenuSubmenuDescriptionFrames[i], tl, tr, bl, br, 0, 0);
+        modmenuSubmenuDescriptions[i].base.pUpdate = 0;
+        modmenuSubmenuDescriptions[i].base.pDraw = (void *)modmenuSubmenuDescriptionDraw;
+        modmenuSubmenuDescriptions[i].base.renderFlags = 0;
+
         uiMenuSetElement(&modmenuSubmenus[i], 0, (UiElementBase_t *)&modmenuSubmenuTitles[i]);
         uiMenuSetElement(&modmenuSubmenus[i], 3, (UiElementBase_t *)&modmenuSubmenuBodies[i]);
         uiMenuSetElement(&modmenuSubmenus[i], 4, (UiElementBase_t *)&modmenuSubmenuFooters[i]);
+        uiMenuSetElement(&modmenuSubmenus[i], 5, (UiElementBase_t *)&modmenuSubmenuDescriptions[i]);
         modmenuSubmenuSelected[i] = 0;
+        modmenuSubmenuValues[i][3] = modmenuSubmenuSettings[3].minValue;
+        modmenuSubmenuValues[i][7] = modmenuSubmenuSettings[7].minValue;
+        modmenuSubmenuValues[i][11] = modmenuSubmenuSettings[11].minValue;
         modmenuSubmenus[i].pSelectedElement = (UiElementBase_t *)&modmenuSubmenuBodies[i];
     }
 }
@@ -1145,6 +1283,7 @@ static void modmenuUpdateSubmenuVisualProbe(int index)
     modmenuSetProbeFrame(&modmenuSubmenuTitleFrames[index], 275.0f, 28.0f, 260.0f, 20.0f);
     modmenuSetProbeFrame(&modmenuSubmenuBodyFrames[index], 195.0f, 87.0f, 123.0f, 238.0f);
     modmenuSetProbeFrame(&modmenuSubmenuFooterFrames[index], 195.0f, 343.0f, 123.0f, 70.0f);
+    modmenuSetProbeFrame(&modmenuSubmenuDescriptionFrames[index], 20.0f, 343.0f, 167.0f, 70.0f);
 }
 
 static void modmenuRestoreFrameEnables(void)
@@ -1221,20 +1360,25 @@ static void modmenuSetActiveSubmenuFrameState(int index)
     MOD_UI_FRAME_ENABLES[0] = 1;
     MOD_UI_FRAME_ENABLES[3] = 1;
     MOD_UI_FRAME_ENABLES[4] = 1;
+    MOD_UI_FRAME_ENABLES[5] = 1;
 
     uiMenuSetElement(&modmenuSubmenus[index], 0, (UiElementBase_t *)&modmenuSubmenuTitles[index]);
     uiMenuSetElement(&modmenuSubmenus[index], 3, (UiElementBase_t *)&modmenuSubmenuBodies[index]);
     uiMenuSetElement(&modmenuSubmenus[index], 4, (UiElementBase_t *)&modmenuSubmenuFooters[index]);
+    uiMenuSetElement(&modmenuSubmenus[index], 5, (UiElementBase_t *)&modmenuSubmenuDescriptions[index]);
     modmenuSubmenus[index].pSelectedElement = (UiElementBase_t *)&modmenuSubmenuBodies[index];
     modmenuSubmenuTitles[index].base.pUpdate = 0;
     modmenuSubmenuBodies[index].base.pUpdate = (void *)modmenuSubmenuUpdate;
     modmenuSubmenuFooters[index].base.pUpdate = 0;
+    modmenuSubmenuDescriptions[index].base.pUpdate = 0;
     modmenuSubmenuTitles[index].base.pDraw = (void *)modmenuSubmenuTitleDraw;
     modmenuSubmenuBodies[index].base.pDraw = (void *)modmenuSubmenuBodyDraw;
     modmenuSubmenuFooters[index].base.pDraw = (void *)modmenuSubmenuFooterDraw;
+    modmenuSubmenuDescriptions[index].base.pDraw = (void *)modmenuSubmenuDescriptionDraw;
     modmenuSubmenuTitles[index].base.renderFlags = 0;
     modmenuSubmenuBodies[index].base.renderFlags = 0;
     modmenuSubmenuFooters[index].base.renderFlags = 0;
+    modmenuSubmenuDescriptions[index].base.renderFlags = 0;
 }
 static UiPauseMenu_t *modmenuGetPauseMenu(void)
 {

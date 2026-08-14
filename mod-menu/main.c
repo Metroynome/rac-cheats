@@ -86,6 +86,7 @@ static ModMenuOption_t modmenuOptions[] = {
     { "Submenu 6", 0 },
 };
 #define MOD_OPTION_COUNT ((int)MOD_ARRAY_COUNT(modmenuOptions))
+#define MOD_SUBMENU_OPTION_COUNT 4
 #define MOD_OPTION_TERMINATOR_COUNT 1
 
 static UiOptionEntry_t modmenuEntries[MOD_ARRAY_COUNT(modmenuOptions) + MOD_OPTION_TERMINATOR_COUNT];
@@ -96,8 +97,7 @@ static const char *modmenuFooterLabels[2] = {
     "\x11 Select",
     "\x12 Exit"
 };
-static const char *modmenuSubmenuBodyText = "This is a custom submenu.";
-static const char *modmenuSubmenuFooterText = "\x12 Back";
+static const char *modmenuSubmenuFooterText = "\x11 Toggle  \x12 Back";
 static UiMenu_t modmenuSubmenus[MOD_ARRAY_COUNT(modmenuOptions)];
 static UiElementText_t modmenuSubmenuTitles[MOD_ARRAY_COUNT(modmenuOptions)];
 static UiElementText_t modmenuSubmenuBodies[MOD_ARRAY_COUNT(modmenuOptions)];
@@ -105,6 +105,8 @@ static UiElementText_t modmenuSubmenuFooters[MOD_ARRAY_COUNT(modmenuOptions)];
 static M1138_MenuItem_Pvar_t modmenuSubmenuTitleFrames[MOD_ARRAY_COUNT(modmenuOptions)];
 static M1138_MenuItem_Pvar_t modmenuSubmenuBodyFrames[MOD_ARRAY_COUNT(modmenuOptions)];
 static M1138_MenuItem_Pvar_t modmenuSubmenuFooterFrames[MOD_ARRAY_COUNT(modmenuOptions)];
+static int modmenuSubmenuSelected[MOD_ARRAY_COUNT(modmenuOptions)];
+static int modmenuSubmenuValues[MOD_ARRAY_COUNT(modmenuOptions)][MOD_SUBMENU_OPTION_COUNT];
 static char modmenuListLabels[MOD_ARRAY_COUNT(modmenuOptions)][64];
 static int modmenuForceCustomMenuFrames;
 
@@ -708,6 +710,84 @@ static void modmenuPollActiveInput(void)
         modmenuApplyDirection(&modmenuList, 0);
     }
 }
+static void modmenuPlaySubmenuSound(UiElementBase_t *element, int soundIndex)
+{
+    Moby *sourceMoby = element ? element->pMoby : 0;
+
+    if (!sourceMoby) {
+        sourceMoby = uiMenuGetFrameMoby(3);
+    }
+    if (sourceMoby) {
+        mobyPlaySoundByIndex(soundIndex, 0x11, sourceMoby);
+    }
+}
+
+static void modmenuSyncSubmenuSelection(int submenuIndex)
+{
+    if (submenuIndex < 0 || submenuIndex >= MOD_OPTION_COUNT) {
+        return;
+    }
+    if (modmenuSubmenuSelected[submenuIndex] < 0) {
+        modmenuSubmenuSelected[submenuIndex] = MOD_SUBMENU_OPTION_COUNT - 1;
+    }
+    if (modmenuSubmenuSelected[submenuIndex] >= MOD_SUBMENU_OPTION_COUNT) {
+        modmenuSubmenuSelected[submenuIndex] = 0;
+    }
+}
+
+static void modmenuMoveSubmenuSelection(UiElementBase_t *element, int submenuIndex, int delta)
+{
+    int previous;
+
+    if (submenuIndex < 0 || submenuIndex >= MOD_OPTION_COUNT) {
+        return;
+    }
+
+    previous = modmenuSubmenuSelected[submenuIndex];
+    modmenuSubmenuSelected[submenuIndex] += delta;
+    modmenuSyncSubmenuSelection(submenuIndex);
+    if (modmenuSubmenuSelected[submenuIndex] != previous) {
+        modmenuPlaySubmenuSound(element, 1);
+    }
+}
+
+static void modmenuToggleSubmenuOption(UiElementBase_t *element, int submenuIndex)
+{
+    int option;
+
+    if (submenuIndex < 0 || submenuIndex >= MOD_OPTION_COUNT) {
+        return;
+    }
+
+    modmenuSyncSubmenuSelection(submenuIndex);
+    option = modmenuSubmenuSelected[submenuIndex];
+    modmenuSubmenuValues[submenuIndex][option] ^= 1;
+    modmenuPlaySubmenuSound(element, 0);
+}
+
+static const char *modmenuSubmenuOptionLabel(int option)
+{
+    static const char *labels[MOD_SUBMENU_OPTION_COUNT] = {
+        "Option 1",
+        "Option 2",
+        "Option 3",
+        "Option 4"
+    };
+
+    if (option < 0 || option >= MOD_SUBMENU_OPTION_COUNT) {
+        return "";
+    }
+    return labels[option];
+}
+
+static const char *modmenuSubmenuValueLabel(int submenuIndex, int option)
+{
+    if (submenuIndex < 0 || submenuIndex >= MOD_OPTION_COUNT || option < 0 || option >= MOD_SUBMENU_OPTION_COUNT) {
+        return "";
+    }
+    return modmenuSubmenuValues[submenuIndex][option] ? "ON" : "OFF";
+}
+
 static int modmenuFindSubmenuIndex(UiElementBase_t *element)
 {
     int i;
@@ -725,17 +805,31 @@ static int modmenuFindSubmenuIndex(UiElementBase_t *element)
 
 static u64 modmenuSubmenuUpdate(UiElementBase_t *element)
 {
-    (void)element;
+    int index = modmenuFindSubmenuIndex(element);
+    int pressed = P1_PAD->hudBitsOn;
 
-    if (P1_PAD->hudBitsOn & PAD_REVERSED_START) {
+    if (pressed & PAD_REVERSED_START) {
         return 1;
     }
-    if (P1_PAD->hudBitsOn & PAD_REVERSED_TRIANGLE) {
+    if (pressed & PAD_REVERSED_TRIANGLE) {
         modmenuSyncSelection(&modmenuList);
         modmenuMenu.pSelectedElement = (UiElementBase_t *)&modmenuList;
         modmenuForceCustomMenuFrames = 4;
         modmenuSetActiveFrameState();
         UI_CHANGE_TO_POINTER = &modmenuMenu;
+        return 0;
+    }
+    if (pressed & PAD_REVERSED_UP) {
+        modmenuMoveSubmenuSelection(element, index, -1);
+        return 0;
+    }
+    if (pressed & PAD_REVERSED_DOWN) {
+        modmenuMoveSubmenuSelection(element, index, 1);
+        return 0;
+    }
+    if ((pressed & PAD_REVERSED_CROSS) || (pressed & PAD_REVERSED_LEFT) || (pressed & PAD_REVERSED_RIGHT)) {
+        modmenuToggleSubmenuOption(element, index);
+        return 0;
     }
 
     return 0;
@@ -786,6 +880,11 @@ static u64 modmenuSubmenuBodyDraw(UiElementText_t *element)
     ModFontWindow_t window;
     int index;
     int font;
+    int rowHeight;
+    int listTop;
+    int valueLeft;
+    int valueRight;
+    int i;
 
     if (!element) {
         return 0;
@@ -795,6 +894,7 @@ static u64 modmenuSubmenuBodyDraw(UiElementText_t *element)
     if (index < 0 || index >= MOD_OPTION_COUNT) {
         index = 0;
     }
+    modmenuSyncSubmenuSelection(index);
 
     fontSet = (ModFontSetFn)GetAddressImmediate(&vaFontSet);
     fontPrintWindow = (ModFontPrintWindowFn)GetAddressImmediate(&vaFontPrintWindow);
@@ -803,24 +903,52 @@ static u64 modmenuSubmenuBodyDraw(UiElementText_t *element)
     }
 
     font = fontSet(1);
-    window.clipTop = 4;
-    window.clipBottom = (s16)(element->base.windowH - 8);
-    window.clipLeft = 4;
-    window.clipRight = (s16)(element->base.windowW - 8);
-    window.x = 8;
-    window.y = 16;
+    rowHeight = element->base.windowH / (MOD_SUBMENU_OPTION_COUNT + 1);
+    if (rowHeight < 1) {
+        rowHeight = element->base.windowH;
+    }
+    listTop = (element->base.windowH - (rowHeight * MOD_SUBMENU_OPTION_COUNT)) / 2;
+    if (listTop < 0) {
+        listTop = 0;
+    }
+    valueLeft = (element->base.windowW * 2) / 3;
+    valueRight = element->base.windowW - 4;
+    if (valueLeft < 48) {
+        valueLeft = 48;
+    }
+
     window.pad0 = 0;
     window.lineHeight = 0x0c;
-    window.flags = 0x0000;
     window.pad1 = 0;
     window.scrollOffset = 0;
-    fontPrintWindow(&window, MOD_COLOR_SHADOW, modmenuOptions[index].label, -1, font, (void *)0x001c35d0);
-    window.y = 15;
-    fontPrintWindow(&window, SelectedColor, modmenuOptions[index].label, -1, font, (void *)0x001c35d0);
-    window.y = 34;
-    fontPrintWindow(&window, MOD_COLOR_SHADOW, modmenuSubmenuBodyText, -1, font, (void *)0x001c35d0);
-    window.y = 33;
-    fontPrintWindow(&window, NotSelectedColor, modmenuSubmenuBodyText, -1, font, (void *)0x001c35d0);
+
+    for (i = 0; i < MOD_SUBMENU_OPTION_COUNT; i++) {
+        const char *label = modmenuSubmenuOptionLabel(i);
+        const char *value = modmenuSubmenuValueLabel(index, i);
+        u32 color = (i == modmenuSubmenuSelected[index]) ? SelectedColor : NotSelectedColor;
+
+        window.clipTop = (s16)(listTop + (i * rowHeight));
+        window.clipBottom = (s16)(listTop + ((i + 1) * rowHeight));
+        window.y = (s16)((window.clipTop + window.clipBottom) / 2);
+
+        window.clipLeft = 8;
+        window.clipRight = (s16)(valueLeft - 2);
+        window.x = 14;
+        window.flags = 0x0000;
+        fontPrintWindow(&window, MOD_COLOR_SHADOW, label, -1, font, (void *)0x001c35d0);
+        window.y = (s16)(window.y - 1);
+        fontPrintWindow(&window, color, label, -1, font, (void *)0x001c35d0);
+
+        window.y = (s16)(window.y + 1);
+        window.clipLeft = (s16)valueLeft;
+        window.clipRight = (s16)valueRight;
+        window.x = (s16)((valueLeft + valueRight) / 2);
+        window.flags = 0x000b;
+        fontPrintWindow(&window, MOD_COLOR_SHADOW, value, -1, font, (void *)0x001c35d0);
+        window.y = (s16)(window.y - 1);
+        fontPrintWindow(&window, color, value, -1, font, (void *)0x001c35d0);
+    }
+
     modmenuFontWindowEnd();
     return UI_DRAW_RESULT_EXACT_SIZE;
 }
@@ -871,7 +999,7 @@ static void modmenuCreateSubmenus(void)
 
     for (i = 0; i < MOD_OPTION_COUNT; i++) {
         uiMenuInit(&modmenuSubmenus[i], &modmenuMenu, MOD_MENU_ID + 1 + i);
-        modmenuCopyAnimIds(&modmenuSubmenus[i], modmenuHelpTopicAnimIds[i % MOD_HELP_TOPIC_ANIM_SET_COUNT]);
+        modmenuCopyAnimIds(&modmenuSubmenus[i], modmenuHelpTopicAnimIds[1]);
 
         modmenuRectVectors(tl, tr, bl, br, 275.0f, 28.0f, 260.0f, 20.0f);
         uiCreateTitle(&modmenuSubmenuTitles[i], &modmenuSubmenuTitleFrames[i], tl, tr, bl, br, 0x4f5e);
@@ -894,6 +1022,7 @@ static void modmenuCreateSubmenus(void)
         uiMenuSetElement(&modmenuSubmenus[i], 0, (UiElementBase_t *)&modmenuSubmenuTitles[i]);
         uiMenuSetElement(&modmenuSubmenus[i], 3, (UiElementBase_t *)&modmenuSubmenuBodies[i]);
         uiMenuSetElement(&modmenuSubmenus[i], 4, (UiElementBase_t *)&modmenuSubmenuFooters[i]);
+        modmenuSubmenuSelected[i] = 0;
         modmenuSubmenus[i].pSelectedElement = (UiElementBase_t *)&modmenuSubmenuBodies[i];
     }
 }

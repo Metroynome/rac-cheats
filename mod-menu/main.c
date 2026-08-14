@@ -90,6 +90,7 @@ static ModMenuOption_t modmenuOptions[] = {
 #define MOD_SUBMENU_MAX_OPTION_COUNT 12
 #define MOD_SUBMENU_MIN_ROW_HEIGHT 34
 #define MOD_SUBMENU_ROW_BG_PADDING 4
+#define MOD_SUBMENU_SHADOW_COLOR 0x80000000
 #define MOD_OPTION_TERMINATOR_COUNT 1
 
 static UiOptionEntry_t modmenuEntries[MOD_ARRAY_COUNT(modmenuOptions) + MOD_OPTION_TERMINATOR_COUNT];
@@ -987,6 +988,7 @@ static u64 modmenuSubmenuBodyDraw(UiElementText_t *element)
     if (rowHeight < 1) {
         rowHeight = element->base.windowH;
     }
+
     listTop = (element->base.windowH - (rowHeight * visibleCount)) / 2;
     if (listTop < 0) {
         listTop = 0;
@@ -1028,7 +1030,7 @@ static u64 modmenuSubmenuBodyDraw(UiElementText_t *element)
         window.clipLeft = 8;
         window.clipRight = (s16)(valueLeft - 2);
         window.x = 14;
-        window.flags = 0x0000;
+        window.flags = 0x0002;
         fontPrintWindow(&window, MOD_COLOR_SHADOW, label, -1, font, (void *)0x001c35d0);
         window.y = (s16)(window.y - 1);
         fontPrintWindow(&window, color, label, -1, font, (void *)0x001c35d0);
@@ -1046,7 +1048,6 @@ static u64 modmenuSubmenuBodyDraw(UiElementText_t *element)
     modmenuFontWindowEnd();
     return UI_DRAW_RESULT_EXACT_SIZE;
 }
-
 static u64 modmenuSubmenuFooterDraw(UiElementText_t *element)
 {
     ModFontSetFn fontSet;
@@ -1067,13 +1068,13 @@ static u64 modmenuSubmenuFooterDraw(UiElementText_t *element)
     font = fontSet(3);
     window.clipTop = 4;
     window.clipBottom = (s16)(element->base.windowH - 4);
-    window.clipLeft = 1;
+    window.clipLeft = 8;
     window.clipRight = (s16)(element->base.windowW - 4);
-    window.x = (s16)(element->base.windowW / 2);
-    window.y = (s16)(element->base.windowH / 2);
+    window.x = 14;
+    window.y = (s16)((element->base.windowH / 2) + 2);
     window.pad0 = 0;
     window.lineHeight = MOD_TITLE_FONT_LINE_HEIGHT;
-    window.flags = 0x000b;
+    window.flags = 0x0002;
     window.pad1 = 0;
     window.scrollOffset = 0;
     fontPrintWindow(&window, MOD_COLOR_SHADOW, modmenuSubmenuFooterText, -1, font, (void *)0x001c3d10);
@@ -1101,13 +1102,13 @@ static void modmenuCreateSubmenus(void)
         modmenuSubmenuTitles[i].base.pDraw = (void *)modmenuSubmenuTitleDraw;
         modmenuSubmenuTitles[i].base.renderFlags = 0;
 
-        modmenuRectVectors(tl, tr, bl, br, 195.0f, 87.0f, 123.0f, 213.0f);
+        modmenuRectVectors(tl, tr, bl, br, 195.0f, 87.0f, 123.0f, 238.0f);
         uiCreateText(&modmenuSubmenuBodies[i], &modmenuSubmenuBodyFrames[i], tl, tr, bl, br, 0, 0);
         modmenuSubmenuBodies[i].base.pUpdate = (void *)modmenuSubmenuUpdate;
         modmenuSubmenuBodies[i].base.pDraw = (void *)modmenuSubmenuBodyDraw;
         modmenuSubmenuBodies[i].base.renderFlags = 0;
 
-        modmenuRectVectors(tl, tr, bl, br, 195.0f, 318.0f, 123.0f, 70.0f);
+        modmenuRectVectors(tl, tr, bl, br, 195.0f, 343.0f, 123.0f, 70.0f);
         uiCreateText(&modmenuSubmenuFooters[i], &modmenuSubmenuFooterFrames[i], tl, tr, bl, br, 0, 0);
         modmenuSubmenuFooters[i].base.pUpdate = 0;
         modmenuSubmenuFooters[i].base.pDraw = (void *)modmenuSubmenuFooterDraw;
@@ -1142,8 +1143,8 @@ static void modmenuUpdateSubmenuVisualProbe(int index)
     }
 
     modmenuSetProbeFrame(&modmenuSubmenuTitleFrames[index], 275.0f, 28.0f, 260.0f, 20.0f);
-    modmenuSetProbeFrame(&modmenuSubmenuBodyFrames[index], 195.0f, 87.0f, 123.0f, 213.0f);
-    modmenuSetProbeFrame(&modmenuSubmenuFooterFrames[index], 195.0f, 318.0f, 123.0f, 70.0f);
+    modmenuSetProbeFrame(&modmenuSubmenuBodyFrames[index], 195.0f, 87.0f, 123.0f, 238.0f);
+    modmenuSetProbeFrame(&modmenuSubmenuFooterFrames[index], 195.0f, 343.0f, 123.0f, 70.0f);
 }
 
 static void modmenuRestoreFrameEnables(void)

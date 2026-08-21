@@ -18,9 +18,14 @@ extern VariableAddress_t vaFontPrintWindow;
 #define MOD_ARRAY_COUNT(array) (sizeof(array) / sizeof((array)[0]))
 #define MOD_PTR_UNSET ((UiMenu_t *)0xffffffff)
 #define MOD_MENU_ID UI_MENU_CUSTOM
+#define MOD_BUILD_TAG "desc-custompoints-2026-08-20"
 #define MOD_STOCK_HELP_MENU ((UiMenu_t *)0x001b3e18)
 #define MOD_UI_FRAME_ENABLES ((int *)0x001b2840)
 #define MOD_TITLE_FONT_LINE_HEIGHT 0x10
+#define MOD_DESC_FRAME_X 20
+#define MOD_DESC_FRAME_Y 343
+#define MOD_DESC_FRAME_W 167
+#define MOD_DESC_FRAME_H 70
 
 typedef struct ModFontWindow {
     s16 clipTop;
@@ -90,6 +95,10 @@ static int modmenuTitleDrawHits;
 static int modmenuListDrawHits;
 static int modmenuListUpdateHits;
 static int modmenuFooterDrawHits;
+static int modmenuSubmenuFrameProbeHits;
+static int modmenuDescOverlayHits;
+static int modmenuSubmenuDescriptionDrawHits;
+static UiMenu_t *modmenuSubmenuFrameProbeMenu;
 static int modmenuTitleScreenX = 21;
 static int modmenuTitleScreenY = 28;
 static int modmenuTitleWindowW = 192;
@@ -188,6 +197,8 @@ static void modmenuCopyAnimIds(UiMenu_t *menu, const int *animIds)
 
 static void modmenuMoveSelection(UiElementList_t *element, int delta);
 static void modmenuSetActiveFrameState(void);
+static void modmenuSyncElementBounds(UiElementBase_t *element, M1138_MenuItem_Pvar_t *frame);
+static void modmenuSetDescriptionBounds(UiElementBase_t *element);
 
 static int modmenuRawButtons(void)
 {
@@ -644,18 +655,38 @@ static void modmenuSyncSelection(UiElementList_t *element)
     }
 }
 
+static Moby *modmenuGetActiveSoundMoby(Moby *fallbackMoby)
+{
+    UiMenu_t *activeMenu = (UiMenu_t *)UI_ACTIVE_POINTER;
+
+    if (activeMenu && activeMenu->pSelectedElement && activeMenu->pSelectedElement->pMoby) {
+        return activeMenu->pSelectedElement->pMoby;
+    }
+    if (fallbackMoby) {
+        return fallbackMoby;
+    }
+    return UI_MOBYS[0];
+}
+
+static void modmenuPlayUiSound(Moby *preferredMoby, int soundIndex)
+{
+    Moby *sourceMoby = modmenuGetActiveSoundMoby(preferredMoby);
+    int result;
+
+    if (!sourceMoby) {
+        return;
+    }
+
+    result = mobyPlaySoundByIndex(soundIndex, 0x11, sourceMoby);
+    if (result < 0 && sourceMoby != UI_MOBYS[0] && UI_MOBYS[0]) {
+        mobyPlaySoundByIndex(soundIndex, 0x11, UI_MOBYS[0]);
+    }
+}
 static void modmenuPlayMoveSound(UiElementList_t *element)
 {
     Moby *sourceMoby = element ? element->base.pMoby : modmenuList.base.pMoby;
-
-    if (!sourceMoby) {
-        sourceMoby = uiMenuGetFrameMoby(3);
-    }
-    if (sourceMoby) {
-        mobyPlaySoundByIndex(1, 0x11, sourceMoby);
-    }
+    modmenuPlayUiSound(sourceMoby, 1);
 }
-
 static void modmenuMoveSelection(UiElementList_t *element, int delta)
 {
     int previous = modmenuSelected;
@@ -781,15 +812,8 @@ static void modmenuPollActiveInput(void)
 static void modmenuPlaySubmenuSound(UiElementBase_t *element, int soundIndex)
 {
     Moby *sourceMoby = element ? element->pMoby : 0;
-
-    if (!sourceMoby) {
-        sourceMoby = uiMenuGetFrameMoby(3);
-    }
-    if (sourceMoby) {
-        mobyPlaySoundByIndex(soundIndex, 0x11, sourceMoby);
-    }
+    modmenuPlayUiSound(sourceMoby, soundIndex);
 }
-
 static int modmenuSubmenuOptionCount(int submenuIndex)
 {
     if (submenuIndex == 0) {
@@ -971,6 +995,53 @@ static u64 modmenuSubmenuUpdate(UiElementBase_t *element)
     return 0;
 }
 
+static void modmenuDrawSubmenuDescriptionOverlay(int index)
+{
+    const char *description;
+    int beginOk;
+    int printedShadow;
+    int printedText;
+    int length;
+
+    modmenuDescOverlayHits++;
+    if (modmenuDescOverlayHits <= 60) {
+        printf("\nmod-menu desc overlay hud hit=%d index=%d active=%08x frame=%d", modmenuDescOverlayHits, index, (u32)UI_ACTIVE_POINTER, UI_FRAME_COUNTER);
+    }
+
+    if (index < 0 || index >= MOD_OPTION_COUNT) {
+        if (modmenuDescOverlayHits <= 60) {
+            printf(" bad-index");
+        }
+        return;
+    }
+
+    description = modmenuSubmenuDescription(index);
+    if (modmenuDescOverlayHits <= 60) {
+        printf(" desc=%08x first=%02x", (u32)description, description ? (u32)(u8)description[0] : 0);
+    }
+    if (!description || !description[0]) {
+        if (modmenuDescOverlayHits <= 60) {
+            printf(" empty-desc");
+        }
+        return;
+    }
+
+    length = modmenuTextLength(description);
+    beginOk = FontPrintHudBegin();
+    if (modmenuDescOverlayHits <= 60) {
+        printf(" begin=%d len=%d", beginOk, length);
+    }
+    if (!beginOk) {
+        return;
+    }
+
+    printedShadow = FontPrintSmallHud(31, 371, MOD_COLOR_SHADOW, description, length);
+    printedText = FontPrintSmallHud(30, 370, NotSelectedColor, description, length);
+    if (modmenuDescOverlayHits <= 60) {
+        printf(" shadow=%d text=%d", printedShadow, printedText);
+    }
+    FontPrintHudEnd();
+}
 static u64 modmenuSubmenuTitleDraw(UiElementText_t *element)
 {
     ModFontSetFn fontSet;
@@ -1150,8 +1221,13 @@ static u64 modmenuSubmenuDescriptionDraw(UiElementText_t *element)
         return 0;
     }
 
+    modmenuSubmenuDescriptionDrawHits++;
     index = modmenuFindSubmenuIndex((UiElementBase_t *)element);
+    modmenuSetDescriptionBounds((UiElementBase_t *)element);
     description = modmenuSubmenuDescription(index);
+    if (modmenuSubmenuDescriptionDrawHits <= 40 || (UI_FRAME_COUNTER & 0x3f) == 1) {
+        printf("\nmod-menu desc pDraw hit=%d tag=%s elem=%08x idx=%d win=%d,%d pos=%d,%d desc=%08x", modmenuSubmenuDescriptionDrawHits, MOD_BUILD_TAG, (u32)element, index, element->base.windowW, element->base.windowH, element->base.screenX, element->base.screenY, (u32)description);
+    }
     fontSet = (ModFontSetFn)GetAddressImmediate(&vaFontSet);
     fontPrintWindow = (ModFontPrintWindowFn)GetAddressImmediate(&vaFontPrintWindow);
     if (!fontSet || !fontPrintWindow || !modmenuUiFontWindowBegin()) {
@@ -1211,7 +1287,6 @@ static u64 modmenuSubmenuFooterDraw(UiElementText_t *element)
     modmenuFontWindowEnd();
     return UI_DRAW_RESULT_EXACT_SIZE;
 }
-
 static void modmenuCreateSubmenus(void)
 {
     VECTOR tl;
@@ -1251,7 +1326,7 @@ static void modmenuCreateSubmenus(void)
         uiMenuSetElement(&modmenuSubmenus[i], 0, (UiElementBase_t *)&modmenuSubmenuTitles[i]);
         uiMenuSetElement(&modmenuSubmenus[i], 3, (UiElementBase_t *)&modmenuSubmenuBodies[i]);
         uiMenuSetElement(&modmenuSubmenus[i], 4, (UiElementBase_t *)&modmenuSubmenuFooters[i]);
-        uiMenuSetElement(&modmenuSubmenus[i], 5, (UiElementBase_t *)&modmenuSubmenuDescriptions[i]);
+        uiMenuSetElement(&modmenuSubmenus[i], 1, (UiElementBase_t *)&modmenuSubmenuDescriptions[i]);
         modmenuSubmenuSelected[i] = 0;
         modmenuSubmenuValues[i][3] = modmenuSubmenuSettings[3].minValue;
         modmenuSubmenuValues[i][7] = modmenuSubmenuSettings[7].minValue;
@@ -1267,6 +1342,28 @@ static void modmenuSetProbeFrame(M1138_MenuItem_Pvar_t *frame, float x, float y,
     uiFramePvarSetCorners2D(frame, x, y, 0.0f, w, h);
 }
 
+static void modmenuSyncElementBounds(UiElementBase_t *element, M1138_MenuItem_Pvar_t *frame)
+{
+    if (!element || !frame) {
+        return;
+    }
+    element->screenX = frame->x;
+    element->screenY = frame->y;
+    element->windowW = frame->w;
+    element->windowH = frame->h;
+}
+
+
+static void modmenuSetDescriptionBounds(UiElementBase_t *element)
+{
+    if (!element) {
+        return;
+    }
+    element->screenX = MOD_DESC_FRAME_X;
+    element->screenY = MOD_DESC_FRAME_Y;
+    element->windowW = MOD_DESC_FRAME_W;
+    element->windowH = MOD_DESC_FRAME_H;
+}
 static void modmenuUpdateVisualProbe(void)
 {
     modmenuSetProbeFrame(&modmenuTitleFrame, 275.0f, 28.0f, 260.0f, 20.0f);
@@ -1283,9 +1380,45 @@ static void modmenuUpdateSubmenuVisualProbe(int index)
     modmenuSetProbeFrame(&modmenuSubmenuTitleFrames[index], 275.0f, 28.0f, 260.0f, 20.0f);
     modmenuSetProbeFrame(&modmenuSubmenuBodyFrames[index], 195.0f, 87.0f, 123.0f, 238.0f);
     modmenuSetProbeFrame(&modmenuSubmenuFooterFrames[index], 195.0f, 343.0f, 123.0f, 70.0f);
-    modmenuSetProbeFrame(&modmenuSubmenuDescriptionFrames[index], 20.0f, 343.0f, 167.0f, 70.0f);
+    modmenuSetProbeFrame(&modmenuSubmenuDescriptionFrames[index], (float)MOD_DESC_FRAME_X, (float)MOD_DESC_FRAME_Y, (float)MOD_DESC_FRAME_W, (float)MOD_DESC_FRAME_H);
 }
 
+static void modmenuProbeSubmenuFrameSlots(int index)
+{
+    int slot;
+
+    if (index < 0 || index >= MOD_OPTION_COUNT) {
+        return;
+    }
+    if (modmenuSubmenuFrameProbeMenu != &modmenuSubmenus[index]) {
+        modmenuSubmenuFrameProbeMenu = &modmenuSubmenus[index];
+        modmenuSubmenuFrameProbeHits = 0;
+    }
+    if (modmenuSubmenuFrameProbeHits >= 16 || (UI_FRAME_COUNTER & 0x1f) != 1) {
+        return;
+    }
+
+    modmenuSubmenuFrameProbeHits++;
+    printf("\nmod-menu submenu frame probe %d tag=%s menu=%08x active=%08x descFrame=%08x", modmenuSubmenuFrameProbeHits, MOD_BUILD_TAG, (u32)&modmenuSubmenus[index], (u32)UI_ACTIVE_POINTER, (u32)&modmenuSubmenuDescriptionFrames[index]);
+    for (slot = 0; slot < UI_MENU_MAX_ELEMENTS; slot++) {
+        UiElementBase_t *element = modmenuSubmenus[index].pElements[slot];
+        Moby *moby = uiMenuGetFrameMoby(slot);
+        printf("\n  slot %d en=%d anim=%d elem=%08x eu=%08x ed=%08x emoby=%08x moby=%08x mu=%08x pvar=%08x mode=%04x seq=%d speed=%d",
+            slot,
+            MOD_UI_FRAME_ENABLES[slot],
+            modmenuSubmenus[index].mobyAnimIds[slot],
+            (u32)element,
+            element ? (u32)element->pUpdate : 0,
+            element ? (u32)element->pDraw : 0,
+            element ? (u32)element->pMoby : 0,
+            (u32)moby,
+            moby ? (u32)moby->pUpdate : 0,
+            moby ? (u32)moby->pVar : 0,
+            moby ? moby->modeBits : 0,
+            moby ? moby->animSeqId : 0,
+            moby ? (int)(moby->animSpeed * 1000.0f) : 0);
+    }
+}
 static void modmenuRestoreFrameEnables(void)
 {
     int i;
@@ -1360,17 +1493,19 @@ static void modmenuSetActiveSubmenuFrameState(int index)
     MOD_UI_FRAME_ENABLES[0] = 1;
     MOD_UI_FRAME_ENABLES[3] = 1;
     MOD_UI_FRAME_ENABLES[4] = 1;
-    MOD_UI_FRAME_ENABLES[5] = 1;
+    MOD_UI_FRAME_ENABLES[1] = 1;
 
     uiMenuSetElement(&modmenuSubmenus[index], 0, (UiElementBase_t *)&modmenuSubmenuTitles[index]);
+    uiMenuSetElement(&modmenuSubmenus[index], 1, (UiElementBase_t *)&modmenuSubmenuDescriptions[index]);
+    uiFrameMobyUseCustomPoints(uiMenuGetFrameMoby(1), &modmenuSubmenuDescriptionFrames[index]);
     uiMenuSetElement(&modmenuSubmenus[index], 3, (UiElementBase_t *)&modmenuSubmenuBodies[index]);
     uiMenuSetElement(&modmenuSubmenus[index], 4, (UiElementBase_t *)&modmenuSubmenuFooters[index]);
-    uiMenuSetElement(&modmenuSubmenus[index], 5, (UiElementBase_t *)&modmenuSubmenuDescriptions[index]);
     modmenuSubmenus[index].pSelectedElement = (UiElementBase_t *)&modmenuSubmenuBodies[index];
     modmenuSubmenuTitles[index].base.pUpdate = 0;
     modmenuSubmenuBodies[index].base.pUpdate = (void *)modmenuSubmenuUpdate;
     modmenuSubmenuFooters[index].base.pUpdate = 0;
     modmenuSubmenuDescriptions[index].base.pUpdate = 0;
+    modmenuSetDescriptionBounds((UiElementBase_t *)&modmenuSubmenuDescriptions[index]);
     modmenuSubmenuTitles[index].base.pDraw = (void *)modmenuSubmenuTitleDraw;
     modmenuSubmenuBodies[index].base.pDraw = (void *)modmenuSubmenuBodyDraw;
     modmenuSubmenuFooters[index].base.pDraw = (void *)modmenuSubmenuFooterDraw;
@@ -1379,6 +1514,7 @@ static void modmenuSetActiveSubmenuFrameState(int index)
     modmenuSubmenuBodies[index].base.renderFlags = 0;
     modmenuSubmenuFooters[index].base.renderFlags = 0;
     modmenuSubmenuDescriptions[index].base.renderFlags = 0;
+    modmenuProbeSubmenuFrameSlots(index);
 }
 static UiPauseMenu_t *modmenuGetPauseMenu(void)
 {

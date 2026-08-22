@@ -14,6 +14,7 @@
 #define MOD_MENU_ID UI_MENU_CUSTOM
 #define MOD_BUILD_TAG "pause-render-hook-row-2026-08-21"
 #define MOD_STOCK_HELP_MENU ((UiMenu_t *)0x001b3e18)
+#define MOD_STOCK_PAUSE_MENU ((UiPauseMenu_t *)0x001c2a08)
 #define MOD_UI_FRAME_ENABLES ((int *)0x001b2840)
 #define MOD_TITLE_FONT_LINE_HEIGHT 0x10
 #define MOD_DESC_FRAME_X 20
@@ -29,10 +30,36 @@ static UiMenuOption_t modMenuEntry;
 static UiElementMenuOption_t modMenuElement;
 static int modMenuSlotReady;
 #define M1138_UPDATE_MENU_ITEM ((void (*)(Moby *))0x00309898)
+#define MOBY_ANIM_SEQS(moby) ((MobySeq **)((moby)->pClass->seqs))
 
+#define DRAW_FRAME_BORDER ((void (*)(Moby *))0x00297830)
 static M1138_MenuItem_Pvar_t modMenuFrames[8];
 static VECTOR modMenuPositions[8];
 static VECTOR modMenuUnk40s[8];
+static void patchPauseMenuSlot(UiPauseMenu_t *pause)
+{
+    if (!pause) {
+        return;
+    }
+    if (pause->menu.menuId != UI_MENU_PAUSE_MAIN) {
+        return;
+    }
+
+    if (modMenuSlotReady == 0) {
+        modMenuEntry = pause->entries.goodies;
+        modMenuElement = pause->optionElements[6];
+        modMenuElement.pOption = &modMenuEntry;
+        modMenuElement.pPreviousElement = &pause->optionElements[6];
+        modMenuElement.pNextElement = 0;
+        modMenuSlotReady = 1;
+    }
+
+    pause->optionElements[6].pNextElement = &modMenuElement;
+    pause->menu.pElements[7] = (UiElementBase_t *)&modMenuElement;
+    pause->menu.mobyAnimIds[7] = pause->menu.mobyAnimIds[6];
+    MOD_UI_FRAME_ENABLES[7] = 1;
+}
+
 static int modMenuLayoutReady;
 
 static float modAbs(float value)
@@ -95,19 +122,26 @@ static void ensureModMenuFrameMoby(UiGlobals_t *ui, UiPauseMenu_t *pause)
         if (!moby) {
             return;
         }
-
         ui->uiMobys[7] = moby;
-        if (source) {
-            vector_copy(moby->position, source->position);
-            vector_copy(moby->unk_40, source->unk_40);
+    }
+
+    if (source) {
+        vector_copy(moby->position, source->position);
+        vector_copy(moby->unk_40, source->unk_40);
+    }
+    else {
+        moby->position[0] = 0.0f;
+        moby->position[1] = 0.0f;
+        moby->position[2] = 0.0f;
+        moby->position[3] = 1.0f;
+    }
+    if (moby->pClass) {
+        if (MOBY_ANIM_SEQS(moby)[pause->menu.mobyAnimIds[7]]) {
+            mobySetAnimation(moby, pause->menu.mobyAnimIds[7], MOBY_ANIM_SEQS(moby)[pause->menu.mobyAnimIds[7]]->frameCnt - 1);
         }
         else {
-            moby->position[0] = 0.0f;
-            moby->position[1] = 0.0f;
-            moby->position[2] = 0.0f;
-            moby->position[3] = 1.0f;
+            mobySetAnimation(moby, pause->menu.mobyAnimIds[7], 0);
         }
-        mobySetAnimation(moby, pause->menu.mobyAnimIds[7], 0);
     }
 
     if (!modMenuLayoutReady) {
@@ -170,19 +204,7 @@ static void installModMenuSlot(UiGlobals_t *ui)
     }
 
     pause = (UiPauseMenu_t *)ui->pActiveMenu;
-    if (modMenuSlotReady == 0) {
-        modMenuEntry = pause->entries.goodies;
-        modMenuElement = pause->optionElements[6];
-        modMenuElement.pOption = &modMenuEntry;
-        modMenuElement.pPreviousElement = &pause->optionElements[6];
-        modMenuElement.pNextElement = 0;
-        modMenuSlotReady = 1;
-    }
-
-    pause->optionElements[6].pNextElement = &modMenuElement;
-    pause->menu.pElements[7] = (UiElementBase_t *)&modMenuElement;
-    pause->menu.mobyAnimIds[7] = pause->menu.mobyAnimIds[6];
-    MOD_UI_FRAME_ENABLES[7] = 1;
+    patchPauseMenuSlot(pause);
     ensureModMenuFrameMoby(ui, pause);
     modMenuElement.base.pMoby = ui->uiMobys[7];
     if (modMenuLayoutReady) {
@@ -200,20 +222,23 @@ static void installModMenuSlot(UiGlobals_t *ui)
 }
 void hookPause(int index)
 {
-    if (index == 0) {
-        UiGlobals_t *ui = (UiGlobals_t*)UI_GLOBALS_ADDRESS;
-        if(ui->pActiveMenu) {
-            printf("\nb: %08x", ui->pActiveMenu);
-            installModMenuSlot(ui);
-        }
+    UiGlobals_t *ui = (UiGlobals_t*)UI_GLOBALS_ADDRESS;
+
+    if (index == 0 && ui->pActiveMenu) {
+        installModMenuSlot(ui);
     }
+
     ((void(*)(int))0x0028d080)(index);
 
+    if (index == 0 && ui->pActiveMenu && ui->pActiveMenu->menuId == UI_MENU_PAUSE_MAIN && ui->uiMobys[7]) {
+        DRAW_FRAME_BORDER(ui->uiMobys[7]);
+    }
 }
 
 int main()
 {
     u32 val = 0x0c0a3420;
+    patchPauseMenuSlot(MOD_STOCK_PAUSE_MENU);
     if (*(u32*)PAUSE_HOOK == val) {
         HOOK_JAL(PAUSE_HOOK, &hookPause);
     }

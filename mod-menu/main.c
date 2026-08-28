@@ -1,243 +1,201 @@
 #include <tamtypes.h>
-#include <librac1/pad.h>
 #include <librac1/game.h>
-#include <librac1/graphics.h>
 #include <librac1/interop.h>
-#include <librac1/stdio.h>
+#include <librac1/moby.h>
 #include <librac1/ui.h>
+#include <librac1/math.h>
 #include <librac1/utils.h>
 
-#define MOD_COLOR_SHADOW 0x80000000
-#define MOD_STATE_MAGIC 0x4d4d3046
-#define MOD_ARRAY_COUNT(array) (sizeof(array) / sizeof((array)[0]))
-#define MOD_PTR_UNSET ((UiMenu_t *)0xffffffff)
-#define MOD_MENU_ID UI_MENU_CUSTOM
-#define MOD_BUILD_TAG "pause-render-hook-row-2026-08-21"
-#define MOD_STOCK_HELP_MENU ((UiMenu_t *)0x001b3e18)
-#define MOD_STOCK_PAUSE_MENU ((UiPauseMenu_t *)0x001b2a08)
-#define MOD_UI_FRAME_ENABLES ((int *)0x001b2840)
-#define MOD_TITLE_FONT_LINE_HEIGHT 0x10
-#define MOD_DESC_FRAME_X 20
-#define MOD_DESC_FRAME_Y 343
-#define MOD_DESC_FRAME_W 167
-#define MOD_DESC_FRAME_H 70
-
-#define PAUSE_HOOK (0x0021ab64)
-
-UiElementBase_t modMenu;
-
-static UiMenuOption_t modMenuEntry;
-static UiElementMenuOption_t modMenuElement;
-static int modMenuSlotReady;
+#define PAUSE_RENDER_HOOK 0x0021ab64
+#define UI_RENDER_MENU ((void (*)(int))0x0028d080)
 #define M1138_UPDATE_MENU_ITEM ((void (*)(Moby *))0x00309898)
-#define MOBY_ANIM_SEQS(moby) ((MobySeq **)((moby)->pClass->seqs))
 
-#define DRAW_FRAME_BORDER ((void (*)(Moby *))0x00297830)
-static M1138_MenuItem_Pvar_t modMenuFrames[8];
-static VECTOR modMenuPositions[8];
-static VECTOR modMenuUnk40s[8];
-static void patchPauseMenuSlot(UiPauseMenu_t *pause)
+#define PAUSE_ROW_COUNT 7
+#define MOD_PAUSE_ROW_COUNT 8
+#define MOD_PAUSE_ROW_SLOT 7
+
+static UiMenuOption_t modPauseEntry;
+static UiElementMenuOption_t modPauseElement;
+static M1138_MenuItem_Pvar_t modPauseFrames[MOD_PAUSE_ROW_COUNT];
+static VECTOR modPausePositions[MOD_PAUSE_ROW_COUNT];
+static VECTOR modPauseUnk40s[MOD_PAUSE_ROW_COUNT];
+static int modPauseSlotReady;
+static int modPauseLayoutReady;
+
+static int isPauseMainMenu(UiMenu_t *menu)
 {
-    if (!pause) {
-        return;
-    }
-    if (pause->menu.menuId != UI_MENU_PAUSE_MAIN) {
-        return;
-    }
-
-    if (modMenuSlotReady == 0) {
-        modMenuEntry = pause->entries.goodies;
-        modMenuElement = pause->optionElements[6];
-        modMenuElement.pOption = &modMenuEntry;
-        modMenuElement.pPreviousElement = &pause->optionElements[6];
-        modMenuElement.pNextElement = 0;
-        modMenuSlotReady = 1;
-    }
-
-    pause->optionElements[6].pNextElement = &modMenuElement;
-    pause->menu.pElements[7] = (UiElementBase_t *)&modMenuElement;
-    pause->menu.mobyAnimIds[7] = pause->menu.mobyAnimIds[6];
-    MOD_UI_FRAME_ENABLES[7] = 1;
+    return menu && menu->menuId == UI_MENU_PAUSE_MAIN;
 }
 
-static int modMenuLayoutReady;
-
-static float modAbs(float value)
-{
-    return value < 0.0f ? -value : value;
-}
-
-static void offsetMenuFrame(M1138_MenuItem_Pvar_t *frame, float dy, float dz, int screenDy)
+/* RAC1 VECTOR order is x,z,y: index 1 is Z, index 2 is Y. */
+static void offsetFrame(M1138_MenuItem_Pvar_t *frame, float z, float y, int screenDy)
 {
     int i;
 
     for (i = 0; i < 4; i++) {
-        frame->point[i][1] += dy;
-        frame->point[i][2] += dz;
+        frame->point[i][1] += z;
+        frame->point[i][2] += y;
     }
     frame->y += screenDy;
 }
 
-static void offsetVector(VECTOR vector, float dy, float dz)
+static void offsetVector(VECTOR vector, float z, float y)
 {
-    vector[1] += dy;
-    vector[2] += dz;
+    vector[1] += z;
+    vector[2] += y;
 }
 
-static void applyFrameMobyLayout(UiGlobals_t *ui)
+static void addPauseMenuRow(UiStaticData_t *ui, UiPauseMenu_t *pause)
 {
-    int i;
+    if (!ui || !pause) {
+        return;
+    }
+    if (!isPauseMainMenu(&pause->menu)) {
+        return;
+    }
 
-    for (i = 0; i < 8; i++) {
-        if (!ui->uiMobys[i]) {
-            continue;
-        }
-        vector_copy(ui->uiMobys[i]->position, modMenuPositions[i]);
-        vector_copy(ui->uiMobys[i]->unk_40, modMenuUnk40s[i]);
-        ui->uiMobys[i]->modeBits &= ~2;
-        ui->uiMobys[i]->pUpdate = M1138_UPDATE_MENU_ITEM;
-        if (i == 7) {
-            uiFrameMobyUseCustomPoints(ui->uiMobys[i], &modMenuFrames[i]);
-        }
-}
+    if (!modPauseSlotReady) {
+        modPauseEntry = pause->entries.goodies;
+        modPauseElement = pause->optionElements[PAUSE_ROW_COUNT - 1];
+        modPauseElement.pOption = &modPauseEntry;
+        modPauseElement.pPreviousElement = &pause->optionElements[PAUSE_ROW_COUNT - 1];
+        modPauseElement.pNextElement = 0;
+        modPauseSlotReady = 1;
+    }
+
+    pause->optionElements[PAUSE_ROW_COUNT - 1].pNextElement = &modPauseElement;
+    pause->menu.pElements[MOD_PAUSE_ROW_SLOT] = (UiElementBase_t *)&modPauseElement;
+    pause->menu.mobyAnimIds[MOD_PAUSE_ROW_SLOT] = pause->menu.mobyAnimIds[PAUSE_ROW_COUNT - 1];
+    ui->frameEnables[MOD_PAUSE_ROW_SLOT] = 1;
 }
 
-static void ensureModMenuFrameMoby(UiGlobals_t *ui, UiPauseMenu_t *pause)
+static int cachePauseMenuLayout(UiGlobals_t *ui)
 {
-    Moby *moby;
-    Moby *source;
-    M1138_MenuItem_Pvar_t *frame5;
-    M1138_MenuItem_Pvar_t *frame6;
-    float frameDy;
-    float frameDz;
-    float posDy;
-    float posDz;
+    M1138_MenuItem_Pvar_t *rowBeforeLast;
+    M1138_MenuItem_Pvar_t *lastRow;
+    float frameZ;
+    float frameY;
+    float posZ;
+    float posY;
     int screenStep;
     int i;
 
-    source = ui->uiMobys[6];
-    moby = ui->uiMobys[7];
-    if (!moby) {
-        moby = mobySpawn(MOBY_ID_FRAME);
-        if (!moby) {
-            return;
-        }
-        ui->uiMobys[7] = moby;
+    if (modPauseLayoutReady) {
+        return 1;
     }
 
-    if (source) {
-        vector_copy(moby->position, source->position);
-        vector_copy(moby->unk_40, source->unk_40);
-    }
-    else {
-        moby->position[0] = 0.0f;
-        moby->position[1] = 0.0f;
-        moby->position[2] = 0.0f;
-        moby->position[3] = 1.0f;
-    }
-    if (moby->pClass) {
-        if (MOBY_ANIM_SEQS(moby)[pause->menu.mobyAnimIds[7]]) {
-            mobySetAnimation(moby, pause->menu.mobyAnimIds[7], MOBY_ANIM_SEQS(moby)[pause->menu.mobyAnimIds[7]]->frameCnt - 1);
-        }
-        else {
-            mobySetAnimation(moby, pause->menu.mobyAnimIds[7], 0);
+    for (i = 0; i < PAUSE_ROW_COUNT; i++) {
+        if (!ui->uiMobys[i] || !ui->uiMobys[i]->pVar) {
+            return 0;
         }
     }
 
-    if (!modMenuLayoutReady) {
-        for (i = 0; i < 7; i++) {
-            if (!ui->uiMobys[i] || !ui->uiMobys[i]->pVar) {
-                return;
-            }
-        }
+    rowBeforeLast = (M1138_MenuItem_Pvar_t *)ui->uiMobys[PAUSE_ROW_COUNT - 2]->pVar;
+    lastRow = (M1138_MenuItem_Pvar_t *)ui->uiMobys[PAUSE_ROW_COUNT - 1]->pVar;
 
-        frame5 = (M1138_MenuItem_Pvar_t *)ui->uiMobys[5]->pVar;
-        frame6 = (M1138_MenuItem_Pvar_t *)ui->uiMobys[6]->pVar;
-        frameDy = frame6->point[0][1] - frame5->point[0][1];
-        frameDz = frame6->point[0][2] - frame5->point[0][2];
-        posDy = ui->uiMobys[6]->position[1] - ui->uiMobys[5]->position[1];
-        posDz = ui->uiMobys[6]->position[2] - ui->uiMobys[5]->position[2];
-        screenStep = frame6->y - frame5->y;
-        if (screenStep <= 0) {
-            screenStep = frame6->h + 6;
-        }
-
-        if (modAbs(frameDy) < 0.001f && modAbs(frameDz) < 0.001f) {
-            frameDy = frame6->point[2][1] - frame6->point[0][1];
-            frameDz = frame6->point[2][2] - frame6->point[0][2];
-            if (modAbs(frameDy) < 0.001f && modAbs(frameDz) < 0.001f) {
-                frameDy = frame6->worldHeight;
-            }
-        }
-        if (modAbs(posDy) < 0.001f && modAbs(posDz) < 0.001f) {
-            posDy = frameDy;
-            posDz = frameDz;
-        }
-
-        for (i = 0; i < 7; i++) {
-            modMenuFrames[i] = *(M1138_MenuItem_Pvar_t *)ui->uiMobys[i]->pVar;
-            vector_copy(modMenuPositions[i], ui->uiMobys[i]->position);
-            vector_copy(modMenuUnk40s[i], ui->uiMobys[i]->unk_40);
-            offsetMenuFrame(&modMenuFrames[i], -(frameDy * 0.5f), -(frameDz * 0.5f), -(screenStep / 2));
-            offsetVector(modMenuPositions[i], -(posDy * 0.5f), -(posDz * 0.5f));
-        }
-        modMenuFrames[7] = *frame6;
-        vector_copy(modMenuPositions[7], ui->uiMobys[6]->position);
-        vector_copy(modMenuUnk40s[7], ui->uiMobys[6]->unk_40);
-        offsetMenuFrame(&modMenuFrames[7], frameDy * 0.5f, frameDz * 0.5f, screenStep / 2);
-        offsetVector(modMenuPositions[7], posDy * 0.5f, posDz * 0.5f);
-        modMenuLayoutReady = 1;
+    frameZ = lastRow->point[0][1] - rowBeforeLast->point[0][1];
+    frameY = lastRow->point[0][2] - rowBeforeLast->point[0][2];
+    posZ = ui->uiMobys[PAUSE_ROW_COUNT - 1]->position[1] - ui->uiMobys[PAUSE_ROW_COUNT - 2]->position[1];
+    posY = ui->uiMobys[PAUSE_ROW_COUNT - 1]->position[2] - ui->uiMobys[PAUSE_ROW_COUNT - 2]->position[2];
+    screenStep = lastRow->y - rowBeforeLast->y;
+    if (screenStep <= 0) {
+        screenStep = lastRow->h + 6;
     }
 
-    applyFrameMobyLayout(ui);
+    if (fabsf(frameZ) < 0.001f && fabsf(frameY) < 0.001f) {
+        frameZ = lastRow->point[2][1] - lastRow->point[0][1];
+        frameY = lastRow->point[2][2] - lastRow->point[0][2];
+        if (fabsf(frameZ) < 0.001f && fabsf(frameY) < 0.001f) {
+            frameZ = lastRow->worldHeight;
+        }
+    }
+    if (fabsf(posZ) < 0.001f && fabsf(posY) < 0.001f) {
+        posZ = frameZ;
+        posY = frameY;
+    }
+
+    for (i = 0; i < PAUSE_ROW_COUNT; i++) {
+        modPauseFrames[i] = *(M1138_MenuItem_Pvar_t *)ui->uiMobys[i]->pVar;
+        vector_copy(modPausePositions[i], ui->uiMobys[i]->position);
+        vector_copy(modPauseUnk40s[i], ui->uiMobys[i]->unk_40);
+        offsetFrame(&modPauseFrames[i], -(frameZ * 0.5f), -(frameY * 0.5f), -(screenStep / 2));
+        offsetVector(modPausePositions[i], -(posZ * 0.5f), -(posY * 0.5f));
+    }
+
+    modPauseFrames[MOD_PAUSE_ROW_SLOT] = *lastRow;
+    vector_copy(modPausePositions[MOD_PAUSE_ROW_SLOT], ui->uiMobys[PAUSE_ROW_COUNT - 1]->position);
+    vector_copy(modPauseUnk40s[MOD_PAUSE_ROW_SLOT], ui->uiMobys[PAUSE_ROW_COUNT - 1]->unk_40);
+    offsetFrame(&modPauseFrames[MOD_PAUSE_ROW_SLOT], frameZ * 0.5f, frameY * 0.5f, screenStep / 2);
+    offsetVector(modPausePositions[MOD_PAUSE_ROW_SLOT], posZ * 0.5f, posY * 0.5f);
+
+    modPauseLayoutReady = 1;
+    return 1;
 }
 
-static void installModMenuSlot(UiGlobals_t *ui)
+static void applyPauseMenuLayout(UiGlobals_t *ui, UiPauseMenu_t *pause)
 {
-    UiPauseMenu_t *pause;
     int i;
-    if (!ui->pActiveMenu) {
+
+    if (!cachePauseMenuLayout(ui)) {
         return;
     }
-    if (ui->pActiveMenu->menuId != UI_MENU_PAUSE_MAIN) {
+
+    for (i = 0; i < MOD_PAUSE_ROW_COUNT; i++) {
+        if (!ui->uiMobys[i]) {
+            continue;
+        }
+        vector_copy(ui->uiMobys[i]->position, modPausePositions[i]);
+        vector_copy(ui->uiMobys[i]->unk_40, modPauseUnk40s[i]);
+        ui->uiMobys[i]->modeBits &= ~2;
+        ui->uiMobys[i]->pUpdate = M1138_UPDATE_MENU_ITEM;
+        uiFrameMobyUseCustomPoints(ui->uiMobys[i], &modPauseFrames[i]);
+    }
+
+    for (i = 0; i < PAUSE_ROW_COUNT; i++) {
+        pause->optionElements[i].base.screenX = modPauseFrames[i].x;
+        pause->optionElements[i].base.screenY = modPauseFrames[i].y;
+        pause->optionElements[i].base.windowW = modPauseFrames[i].w;
+        pause->optionElements[i].base.windowH = modPauseFrames[i].h;
+    }
+
+    modPauseElement.base.pMoby = ui->uiMobys[MOD_PAUSE_ROW_SLOT];
+    modPauseElement.base.screenX = modPauseFrames[MOD_PAUSE_ROW_SLOT].x;
+    modPauseElement.base.screenY = modPauseFrames[MOD_PAUSE_ROW_SLOT].y;
+    modPauseElement.base.windowW = modPauseFrames[MOD_PAUSE_ROW_SLOT].w;
+    modPauseElement.base.windowH = modPauseFrames[MOD_PAUSE_ROW_SLOT].h;
+}
+
+static void updatePauseMenu(UiGlobals_t *ui)
+{
+    UiPauseMenu_t *pause;
+
+    if (!isPauseMainMenu(ui->pActiveMenu)) {
         return;
     }
 
     pause = (UiPauseMenu_t *)ui->pActiveMenu;
-    patchPauseMenuSlot(pause);
-    ensureModMenuFrameMoby(ui, pause);
-    modMenuElement.base.pMoby = ui->uiMobys[7];
-    if (modMenuLayoutReady) {
-        for (i = 0; i < 7; i++) {
-            pause->optionElements[i].base.screenX = modMenuFrames[i].x;
-            pause->optionElements[i].base.screenY = modMenuFrames[i].y;
-            pause->optionElements[i].base.windowW = modMenuFrames[i].w;
-            pause->optionElements[i].base.windowH = modMenuFrames[i].h;
-        }
-        modMenuElement.base.screenX = modMenuFrames[7].x;
-        modMenuElement.base.screenY = modMenuFrames[7].y;
-        modMenuElement.base.windowW = modMenuFrames[7].w;
-        modMenuElement.base.windowH = modMenuFrames[7].h;
-    }
-}
-void hookPause(int index)
-{
-    UiGlobals_t *ui = (UiGlobals_t*)UI_GLOBALS_ADDRESS;
-
-    if (index == 0 && ui->pActiveMenu) {
-        installModMenuSlot(ui);
-    }
-
-    ((void(*)(int))0x0028d080)(index);
-
+    addPauseMenuRow(&UI_STATIC_DATA, pause);
+    applyPauseMenuLayout(ui, pause);
 }
 
-int main()
+void hookPauseRender(int index)
 {
-    u32 val = 0x0c0a3420;
-    patchPauseMenuSlot(MOD_STOCK_PAUSE_MENU);
-    if (*(u32*)PAUSE_HOOK == val) {
-        HOOK_JAL(PAUSE_HOOK, &hookPause);
+    if (index == 0) {
+        updatePauseMenu((UiGlobals_t *)UI_GLOBALS_ADDRESS);
     }
+
+    UI_RENDER_MENU(index);
+}
+
+int main(void)
+{
+    UiStaticData_t *ui = &UI_STATIC_DATA;
+
+    addPauseMenuRow(ui, &ui->menus.pauseMain);
+
+    if (*(u32 *)PAUSE_RENDER_HOOK == 0x0c0a3420) {
+        HOOK_JAL(PAUSE_RENDER_HOOK, &hookPauseRender);
+    }
+
     return 0;
 }

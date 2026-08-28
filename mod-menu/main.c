@@ -14,7 +14,7 @@
 #define MOD_MENU_ID UI_MENU_CUSTOM
 #define MOD_BUILD_TAG "pause-render-hook-row-2026-08-21"
 #define MOD_STOCK_HELP_MENU ((UiMenu_t *)0x001b3e18)
-#define MOD_STOCK_PAUSE_MENU ((UiPauseMenu_t *)0x001c2a08)
+#define MOD_STOCK_PAUSE_MENU ((UiPauseMenu_t *)0x001b2a08)
 #define MOD_UI_FRAME_ENABLES ((int *)0x001b2840)
 #define MOD_TITLE_FONT_LINE_HEIGHT 0x10
 #define MOD_DESC_FRAME_X 20
@@ -230,9 +230,6 @@ void hookPause(int index)
 
     ((void(*)(int))0x0028d080)(index);
 
-    if (index == 0 && ui->pActiveMenu && ui->pActiveMenu->menuId == UI_MENU_PAUSE_MAIN && ui->uiMobys[7]) {
-        DRAW_FRAME_BORDER(ui->uiMobys[7]);
-    }
 }
 
 int main()
